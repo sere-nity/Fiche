@@ -1,0 +1,103 @@
+[
+  {
+    "slug": "machiavelli-prince",
+    "title": "The Prince",
+    "author": "Niccolò Machiavelli",
+    "year": 1532,
+    "translator": "W. K. Marriott (1908)",
+    "source": "Project Gutenberg #1232",
+    "themes": [
+      "power",
+      "state",
+      "morality",
+      "violence",
+      "history"
+    ]
+  },
+  {
+    "slug": "hobbes-leviathan-1",
+    "title": "Leviathan, Part I: Of Man",
+    "author": "Thomas Hobbes",
+    "year": 1651,
+    "translator": null,
+    "source": "Project Gutenberg #3207",
+    "themes": [
+      "power",
+      "state",
+      "nature",
+      "reason",
+      "language",
+      "religion",
+      "violence",
+      "justice"
+    ]
+  },
+  {
+    "slug": "rousseau-social-contract",
+    "title": "The Social Contract",
+    "author": "Jean-Jacques Rousseau",
+    "year": 1762,
+    "translator": "G. D. H. Cole (1913)",
+    "source": "Project Gutenberg #46333",
+    "themes": [
+      "freedom",
+      "state",
+      "law",
+      "justice",
+      "equality",
+      "power"
+    ]
+  },
+  {
+    "slug": "montaigne-essays-selection",
+    "title": "Essays (a selection)",
+    "author": "Michel de Montaigne",
+    "year": 1580,
+    "translator": "Charles Cotton (1685), ed. W. C. Hazlitt",
+    "source": "Project Gutenberg #3600",
+    "themes": [
+      "culture",
+      "death",
+      "self",
+      "custom",
+      "nature",
+      "time",
+      "morality"
+    ]
+  },
+  {
+    "slug": "pascal-pensees",
+    "title": "Pensées",
+    "author": "Blaise Pascal",
+    "year": 1670,
+    "translator": "W. F. Trotter (1910)",
+    "source": "Project Gutenberg #18269",
+    "themes": [
+      "religion",
+      "reason",
+      "happiness",
+      "self",
+      "truth",
+      "desire",
+      "science"
+    ]
+  },
+  {
+    "slug": "tocqueville-democracy-2",
+    "title": "Democracy in America, Volume 2",
+    "author": "Alexis de Tocqueville",
+    "year": 1840,
+    "translator": "Henry Reeve (1840)",
+    "source": "Project Gutenberg #816",
+    "themes": [
+      "equality",
+      "freedom",
+      "state",
+      "society",
+      "religion",
+      "work",
+      "art",
+      "science"
+    ]
+  }
+]

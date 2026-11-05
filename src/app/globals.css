@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* Paper and ink. Serif for the books, sans for the interface. */
+:root {
+  --background: #f6f2ea;
+  --surface: #fffdf8;
+  --foreground: #1f1b16;
+  --muted: #6b6257;
+  --rule: #e2dacb;
+  --accent: #8a2b2b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #15130f;
+    --surface: #1d1a15;
+    --foreground: #ebe5d9;
+    --muted: #a39a8c;
+    --rule: #332e26;
+    --accent: #d98b7a;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-rule: var(--rule);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-newsreader);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
