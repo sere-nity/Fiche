@@ -2,8 +2,9 @@ import { sql } from "drizzle-orm";
 import { pgTable, pgEnum, uuid, text, timestamp, jsonb, index, primaryKey, check } from "drizzle-orm/pg-core";
 
 /**
- * Four tables. Cards and essays carry learner_id. How a learner is
- * identified is decided in milestone 2, when the first row gets written.
+ * Five tables. A learner signs in with an email (no password: this is a
+ * prototype, and anyone who types your email gets in). Their id is kept in an
+ * httpOnly cookie; see src/lib/session.ts.
  *
  * Static content is not here: the books are files in data/texts/, and a
  * question is stored as plain text on the essay that uses it.
@@ -38,6 +39,13 @@ export type Feedback = {
 
 // ---------- tables ----------
 
+export const learners = pgTable("learners", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** Stored lowercased and trimmed, so "Serene@x.com " and "serene@x.com" are one learner. */
+  email: text("email").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /**
  * Every node on the canvas is a card. Two kinds:
  *
@@ -60,7 +68,9 @@ export const cards = pgTable(
   "cards",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    learnerId: uuid("learner_id").notNull(),
+    learnerId: uuid("learner_id")
+      .notNull()
+      .references(() => learners.id, { onDelete: "cascade" }),
     kind: cardKindEnum("kind").notNull().default("quote"),
     textSlug: text("text_slug"),
     typedSource: text("typed_source"),
@@ -110,7 +120,9 @@ export const essays = pgTable(
   "essays",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    learnerId: uuid("learner_id").notNull(),
+    learnerId: uuid("learner_id")
+      .notNull()
+      .references(() => learners.id, { onDelete: "cascade" }),
     question: text("question").notNull(),
     mode: essayModeEnum("mode").notNull().default("practice"),
     body: text("body").notNull().default(""),

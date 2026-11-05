@@ -28,12 +28,12 @@ You type the session question, or ask the AI for an unseen one shaped by your hi
 
 ## Screens and UX
 
-Five screens. Every AI call shows a loading state, and every failure keeps the user's work.
+Five screens, plus a sign-in page (email only). Every AI call shows a loading state, and every failure keeps the user's work.
 
 | Screen | What the user does | Key states |
 | --- | --- | --- |
-| Library | Picks one of six public-domain texts, or adds a quote directly with a typed source (from a Kindle, a paper book, anywhere) | Empty never happens: the six texts ship with the app |
-| Reader | Reads, selects a passage, clicks Save as card. A side panel asks for the gist (one sentence) and a title (a few words), then the AI checks the gist against the passage. Saved passages stay highlighted on reread | Saving card; check pending; check fails (card still saves, flagged unchecked) |
+| Library + Cards | Picks one of six public-domain texts. The Cards page lists every saved card and lets you add a quote directly with a typed source (from a Kindle, a paper book, anywhere) | Empty never happens: the six texts ship with the app |
+| Reader | Reads, selects a passage, clicks Save as card. A side panel asks for the gist (one sentence) and an optional title (a few words; without one, the gist's first words are used), then the AI checks the gist against the passage. The result shows in the panel, and the learner can revise the gist and re-check. Saved passages stay underlined on reread, with a dot in the margin that reopens the card | Saving card; check pending; check fails (card still saves, flagged unchecked) |
 | Canvas (diverge) | Sees cards as nodes. Selects two or more cards and creates a synthesis card from them, or drags another card into an existing synthesis. A drawer opens: the AI asks how these sources combine to answer the session question (the one the next essay is on); the user then writes the synthesis: a title naming the move and a one-sentence claim, optionally tagged with the move (lens, fusion, lineage, counterweight, concession, test case). A synthesis can itself be a source, so connections can be connected. Zoom out shows titles, mid zoom shows gists and claims, zoom in shows quotes | Fewer than 2 cards: prompt to go read; streaming reply; a synthesis with no claim written yet isn't saved |
 | Write (converge) | Types a question or asks the AI for an unseen one, then gets a 15-minute timer. Writes a mini dissertation: a problématique plus two short paragraphs arguing opposite sides. Types @ to cite a card, quote or synthesis. No AI once the timer starts | Timer expired (auto-submit, work kept); no cards cited (allowed, flagged in feedback); autosave every few seconds |
 | Feedback | Sees a rubric score per dimension and, for every @ reference, the card quoted with a verdict: does it do argumentative work or is it decoration | Grading pending; grading fails (essay kept, retry button) |
@@ -76,10 +76,13 @@ They can come back once real usage shows which signals actually predict better e
 
 ## Data model
 
-Four Postgres tables. Static content stays out of the database: the six books are Markdown files in the repo, and a question is plain text on its essay. Every card and essay carries `learner_id`, the anonymous id from an httpOnly cookie set on first visit (no auth, no learners table).
+Five Postgres tables. Static content stays out of the database: the six books are Markdown files in the repo, and a question is plain text on its essay. Every card and essay belongs to a learner.
+
+**Sign-in.** Email only, no password: the sign-in action finds or creates the learner by email and puts their id in an httpOnly cookie. That gives a returning learner their history from any browser, and lets the demo start from a real library. Anyone who types an email gets that learner, which is acceptable only for a prototype.
 
 | Table | Key fields | Notes |
 | --- | --- | --- |
+| learners | id, email (unique, lowercased), created\_at | |
 | cards | id, learner\_id, kind (quote / synthesis), text\_slug, typed\_source, quote, quote\_prefix, quote\_suffix, gist, title, move, gist\_check (faithful / partly / no / unchecked), gist\_check\_reason, position jsonb (x, y), created\_at | Every canvas node is a card. A quote card holds the selected span (capped at \~60 words); the database rejects a quote card with no quote. A synthesis card has no quote: title names the move, gist is the claim |
 | card\_sources | card\_id, source\_id | "This synthesis draws on that card." Many-to-many, so a synthesis can have any number of sources and can itself be a source. These rows are the canvas edges. Cycles are rejected in code |
 | essays | id, learner\_id, question (text), mode (practice / exam), body, started\_at, submitted\_at, feedback jsonb (rubric + pattern) | Rubric = per-dimension score + reason |
@@ -101,17 +104,19 @@ Full-stack TypeScript on Next.js (App Router), deployed to Vercel, with Neon Pos
 | Essay editor | Tiptap with its Mention extension | @ autocomplete over cards without building an editor |
 | Validation | Zod | Shared by API input checks and AI output schemas |
 
-**API routes**
+**Server actions and routes.** Mutations from the app's own pages are Next.js server actions (typed function calls, no hand-written API). A route handler is used only where a stream is needed.
 
-| Route | Method | Does |
-| --- | --- | --- |
-| /api/cards | POST | Save a card. Quote card: then run the gist check and update the row. Synthesis card: save with its source ids |
-| /api/cards/\[id\]/sources | POST | Add a source to a synthesis (rejects cycles) |
-| /api/cards/\[id\]/examine | POST | Stream the synthesis examiner's turn |
-| /api/questions | POST | Generate an unseen question |
-| /api/essays | POST | Start an essay with its question text |
-| /api/essays/\[id\]/submit | POST | Save body, run the grader, write citations |
-| /api/learner | GET | Your history: unused cards, last weakness, encoding vs retrieval counts |
+| Action / route | Does |
+| --- | --- |
+| `signIn`, `signOut` | Find or create the learner by email, set or clear the cookie |
+| `saveQuoteCard` | Validate and insert a quote card as unchecked |
+| `runGistCheck` | Run the gist check on a card and update it; a failure leaves it unchecked and retryable |
+| `saveSynthesisCard`, `addSource` | Save a synthesis with its source ids; add a source (rejects cycles) |
+| POST /api/cards/\[id\]/examine | Stream the synthesis examiner's turn (route handler, for `useChat`) |
+| `generateQuestion` | Generate an unseen question |
+| `startEssay` | Start an essay with its question text |
+| `submitEssay` | Save body, run the grader, write citations |
+| history query (server-side) | Your history: unused cards, last weakness, encoding vs retrieval counts |
 
 **Texts.** Six public-domain English translations from Project Gutenberg: Machiavelli's *The Prince*, Hobbes' *Leviathan* part 1, Rousseau's *Social Contract*, seven Montaigne essays, Pascal's *Pensées* and Tocqueville vol. 2. A one-off script trimmed front matter and editors' notes and wrote one Markdown file per book (`data/texts/<slug>.md`) plus a manifest of titles, authors and themes. The app reads them as static files; they never go in the database. Copyright is noted per translation in the README.
 
@@ -120,7 +125,7 @@ Full-stack TypeScript on Next.js (App Router), deployed to Vercel, with Neon Pos
 Six milestones in order, each ending in something that runs. Write mode and feedback come before the canvas: they're the forcing function and the "checks understanding" focus, and a plain card list can stand in for the canvas if time runs out. Instruction for Claude Code: do one milestone at a time, stop after each, and explain the files it created so I can walk through them in the interview.
 
 1. **Skeleton and data (about 1 hour). Done.** Next.js app, Drizzle schema and migrations, Postgres connection (local or Neon), anonymous learner cookie, the six texts as static Markdown. *Done when:* `npm run db:migrate` creates the tables and the Library page lists the texts.
-2. **Reader and cards (about 2 hours).** Render a text by paragraph; select to save a card with gist and title, anchored by quote text; saved passages highlighted on reread; add a quote directly with a typed source; gist check runs after save and its result shows on the card. *Done when:* a saved card survives a refresh and shows its check result; a failed AI call still saves the card as unchecked.
+2. **Reader, sign-in and cards (about 2 hours). Done.** Email sign-in; render a text by paragraph; select to save a card with gist and title, anchored by quote text; saved passages highlighted on reread; add a quote directly with a typed source; gist check runs after save and its result shows on the card. *Done when:* a saved card survives a refresh and shows its check result; a failed AI call still saves the card as unchecked.
 3. **Write mode (about 1.5 hours).** Type a question or generate an unseen one, 15-minute timer, Tiptap editor with @ over the learner's cards, autosave, practice and exam mode. *Done when:* an essay with two @ citations submits and its body and citations are stored.
 4. **Grader and feedback (about 1 hour).** Grader endpoint with Zod schema; feedback page with rubric and per-citation verdicts. *Done when:* a deliberately name-dropping citation is marked decorative and the reason quotes the card.
 5. **Canvas and synthesis (about 2 hours).** React Flow canvas of cards, create a synthesis card from selected cards, drag more sources in, streamed examiner chat in a drawer, claim and optional move submission, semantic zoom (title / gist / quote), examiner grounded in the session question. Keep the tooling light: most synthesis still happens while writing the essay. *Done when:* a synthesis of three cards, one of them itself a synthesis, survives a refresh and can be @-cited in an essay.
@@ -137,7 +142,7 @@ Cut for the weekend, in the order I'd add them back:
 * **Spaced revisits.** Bring back cards and syntheses on a schedule, like Anki, but for linking rather than recall.
 * **Grand oral mode.** A spoken viva with follow-up questions, using streaming speech-to-text.
 * **Full five-hour dissertation** with a plan stage, graded on structure.
-* **Auth and multiple devices.** The anonymous cookie is enough for a demo.
+* **Real auth.** Email sign-in has no password or verification. A magic link or OAuth would make it safe for real users.
 * **Grader evaluation.** A small set of hand-marked mini essays to check the grader agrees with a human, since LLM graders tend to be lenient.
 
 ## Open decisions

@@ -1,0 +1,61 @@
+/**
+ * A book's .md file (data/texts/<slug>.md) as paragraphs, and the plain text
+ * the reader sees.
+ *
+ * Format, one block per paragraph:
+ *   ## Heading
+ *   ### 12              a numbered fragment (Pascal)
+ *   > a line of verse   indented quotation, line breaks kept
+ *   A plain paragraph, with _italics_.
+ *
+ * The plain text matters: highlights are anchored by character offsets into
+ * it. The Reader renders each block so that its DOM textContent is exactly
+ * plainText(block), so the browser (measuring a selection) and the server
+ * (finding a passage for the gist check) see the same string.
+ */
+
+export type BlockKind = "heading" | "num" | "verse" | "p";
+export type Block = { id: string; kind: BlockKind; text: string };
+export type Segment = { text: string; em: boolean };
+
+export function parseBook(md: string): Block[] {
+  return md
+    .split(/\n\s*\n/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .map((chunk, i): Block => {
+      const id = `p-${String(i + 1).padStart(4, "0")}`; // for scrolling only; nothing stores it
+      if (chunk.startsWith("### ")) return { id, kind: "num", text: chunk.slice(4) };
+      if (chunk.startsWith("## ")) return { id, kind: "heading", text: chunk.slice(3) };
+      if (chunk.startsWith("> ")) {
+        return { id, kind: "verse", text: chunk.split("\n").map((l) => l.replace(/^> ?/, "")).join("\n") };
+      }
+      return { id, kind: "p", text: chunk };
+    });
+}
+
+/** Split "_italic_ words" into styled runs. */
+export function segments(text: string): Segment[] {
+  return text
+    .split(/_([^_\n]+)_/)
+    .map((t, i) => ({ text: t, em: i % 2 === 1 }))
+    .filter((s) => s.text.length > 0);
+}
+
+/** What a reader sees for one block: the text without Markdown markers. */
+export function plainText(block: Block): string {
+  return segments(block.text)
+    .map((s) => s.text)
+    .join("");
+}
+
+/** The whole book as the reader sees it, plus where each block starts in that string. */
+export function bookText(blocks: Block[]): { text: string; starts: number[] } {
+  const starts: number[] = [];
+  let text = "";
+  for (const b of blocks) {
+    starts.push(text.length);
+    text += plainText(b);
+  }
+  return { text, starts };
+}

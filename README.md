@@ -2,11 +2,11 @@
 
 Fiche trains one skill: linking ideas from the great books to a question you haven't seen yet, the way the French *culture générale* dissertation demands. You read, save ideas as cards, link them on a canvas, then write a short timed essay. The only help you get is your own cards. See [SPEC.md](SPEC.md).
 
-**Status:** milestone 1 of 6 is done (skeleton and data).
+**Status:** milestones 1–2 of 6 are done (skeleton and data; Reader, sign-in and cards).
 
 ## Stack
 
-Next.js 16 (App Router, Cache Components) · TypeScript · Drizzle ORM · Postgres (Neon in production, any Postgres locally) · Tailwind v4
+Next.js 16 (App Router, Cache Components) · TypeScript · Drizzle ORM · Postgres (Neon in production, any Postgres locally) · Tailwind v4 · AI SDK 7 + Anthropic · Zod
 
 ## Run locally
 
@@ -20,6 +20,7 @@ cp .env.example .env.local
 #    then set DATABASE_URL in .env.local to either:
 #    - local:  postgres://YOUR_USER@localhost:5432/fiche   (createdb fiche first)
 #    - Neon:   the *pooled* connection string from the Neon console
+#    and ANTHROPIC_API_KEY for the gist check (without it, cards save as "unchecked")
 
 # 2. Create the tables
 npm run db:migrate
@@ -43,9 +44,22 @@ npm run dev        # http://localhost:3000
 
 ```
 src/
-  app/            routes (Library at /)
-  db/schema.ts    the four tables: cards, card_sources, essays, citations
-  lib/texts.ts    the list of books (from data/texts/manifest.json)
+  app/
+    page.tsx            Library (/), static
+    read/[slug]/        Reader: static book + the panel for selecting and saving cards
+    cards/              your cards, add a quote directly, the card server actions,
+                        and the check-status box (verdict colours shared with Feedback later)
+    nav-links.tsx       header nav (Canvas and Write join it later)
+    sign-in/            email sign-in (no password) and its server actions
+  db/schema.ts          the tables: learners, cards, card_sources, essays, citations
+  db/index.ts           Postgres client (works locally and on Neon)
+  lib/texts.ts          the list of books and reading one from disk
+  lib/book.ts           .md → paragraphs, and the plain text highlights are measured in
+  lib/anchor.ts         find a saved quote again in a book
+  lib/session.ts        who's signed in (reads the cookie)
+  lib/shelf.ts          per-book card counts for the Library (total, unused)
+  lib/gist-check.ts     AI job: does the gist say what the passage says?
+  lib/ai.ts             which model each AI job uses
 scripts/          prepare-texts.ts: one-off, made data/texts/ from Gutenberg
 data/texts/       the books: <slug>.md + manifest.json (static, not in the DB)
 drizzle/          generated SQL migrations
@@ -66,4 +80,4 @@ All six texts come from Project Gutenberg. Editors' introductions and notes are 
 
 ## Questions
 
-There is no question bank. You either type your own question or ask the AI for an unseen one. An essay or link stores its question as plain text.
+There is no question bank. You either type your own question or ask the AI for an unseen one. An essay stores its question as plain text.

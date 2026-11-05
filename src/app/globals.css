@@ -1,38 +1,86 @@
 @import "tailwindcss";
 
-/* Paper and ink. Serif for the books, sans for the interface. */
+/*
+ * Design tokens, from the Fiche design canvas. Light only, as designed.
+ * Verdicts use blue (good) against orange (needs work): they differ in
+ * lightness as well as hue, so they read for colour-blind users too.
+ */
 :root {
-  --background: #f6f2ea;
-  --surface: #fffdf8;
-  --foreground: #1f1b16;
-  --muted: #6b6257;
-  --rule: #e2dacb;
-  --accent: #8a2b2b;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #15130f;
-    --surface: #1d1a15;
-    --foreground: #ebe5d9;
-    --muted: #a39a8c;
-    --rule: #332e26;
-    --accent: #d98b7a;
-  }
+  --background: #fbfbf8;
+  --surface: #ffffff;
+  --foreground: #17171c;
+  --secondary: #3d3d45; /* body text on surfaces */
+  --muted: #5e5e66; /* labels */
+  --faint: #8a8a92; /* placeholders */
+  --rule: #e3e3de;
+  --rule-soft: #efefea;
+  --field: #c9c9c2; /* input borders */
+  --accent: #2e3bd1;
+  --accent-hover: #1f2899;
+  --accent-soft: #e8eafc;
+  --highlight: #e6f59a; /* the passage you're making a card from */
+  --quote: #f4f6df; /* quote box */
+  --underline: #9aa3f0; /* passages you've already saved */
+  --chat: #f1f1ec;
+  --warn: #9a3412;
+  --warn-strong: #c2410c;
+  --warn-soft: #fff6ee;
+  --warn-border: #f0c9a8;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-foreground: var(--foreground);
+  --color-secondary: var(--secondary);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-rule: var(--rule);
+  --color-rule-soft: var(--rule-soft);
+  --color-field: var(--field);
   --color-accent: var(--accent);
-  --font-sans: var(--font-geist-sans);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-highlight: var(--highlight);
+  --color-quote: var(--quote);
+  --color-underline: var(--underline);
+  --color-chat: var(--chat);
+  --color-warn: var(--warn);
+  --color-warn-strong: var(--warn-strong);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-border: var(--warn-border);
+  --font-sans: var(--font-inter);
   --font-serif: var(--font-newsreader);
 }
 
 body {
   background: var(--background);
+  color: var(--foreground);
+}
+
+/*
+ * Reader: the cards drawer is 380px wide on the right. On screens too narrow
+ * for it to fit in the margin beside the 760px text column, shift the text
+ * left while it's open so the drawer never covers the passage.
+ */
+@media (min-width: 1024px) and (max-width: 1599px) {
+  html[data-drawer="open"] #reader-main {
+    padding-right: calc(380px + 2rem);
+  }
+}
+
+/* Reader highlights, painted with the CSS Custom Highlight API (no DOM changes). */
+::highlight(fiche-card) {
+  text-decoration: underline;
+  text-decoration-color: var(--underline);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+::highlight(fiche-draft) {
+  background-color: var(--highlight);
+  color: var(--foreground);
+}
+::highlight(fiche-focus) {
+  background-color: var(--highlight);
   color: var(--foreground);
 }
