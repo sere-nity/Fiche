@@ -205,15 +205,36 @@ export function ReaderPanel({
     };
   }, [open]);
 
-  function jumpTo(id: string) {
-    const pos = located.find((l) => l.card.id === id)?.pos;
-    const range = book && pos ? rangeAt(book, pos) : null;
-    if (range) {
-      const top = range.getBoundingClientRect().top + window.scrollY - window.innerHeight / 3;
-      window.scrollTo({ top, behavior: "smooth" });
-    }
+  /**
+   * Open a card and scroll its passage into view (from the drawer's list, or a
+   * #card-<id> link from the canvas). The scroll waits a frame so the drawer's
+   * switch to the card can't shift the layout mid-scroll.
+   */
+  function jumpTo(id: string, behavior: ScrollBehavior = "smooth") {
     show({ kind: "card", id });
+    const pos = located.find((l) => l.card.id === id)?.pos;
+    if (!book || !pos) return;
+    requestAnimationFrame(() => {
+      const range = rangeAt(book, pos);
+      if (!range) return;
+      const top = range.getBoundingClientRect().top + window.scrollY - window.innerHeight / 3;
+      window.scrollTo({ top: Math.max(0, top), behavior });
+    });
   }
+
+  // Arriving from the canvas with #card-<id>: open that card at its passage.
+  const jumpRef = useRef(jumpTo);
+  useEffect(() => {
+    jumpRef.current = jumpTo;
+  });
+  const arrived = useRef(false);
+  useEffect(() => {
+    const id = window.location.hash.match(/^#card-([0-9a-f-]{36})$/)?.[1];
+    if (arrived.current || !id || !located.some((l) => l.card.id === id && l.pos)) return;
+    arrived.current = true;
+    // Wait for web fonts: they change line heights, and so where the passage is.
+    void document.fonts.ready.then(() => jumpRef.current(id, "instant"));
+  }, [located]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -256,7 +277,7 @@ export function ReaderPanel({
               key={d.id}
               type="button"
               aria-label={`Open card: ${d.title}`}
-              onClick={() => jumpTo(d.id)}
+              onClick={() => show({ kind: "card", id: d.id })}
               style={{ top: d.top }}
               className={`absolute left-0 h-2 w-2 rounded-full before:absolute before:-inset-3 before:content-[''] ${
                 mode.kind === "card" && mode.id === d.id ? "bg-foreground" : "bg-accent"

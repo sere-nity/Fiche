@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// Canvas and Write join this list in milestones 3 and 5.
+// Write joins this list in milestone 3.
 const LINKS = [
   { href: "/", label: "Library", match: (p: string) => p === "/" || p.startsWith("/read") },
-  { href: "/cards", label: "Cards", match: (p: string) => p.startsWith("/cards") },
+  { href: "/canvas", label: "Canvas", match: (p: string) => p.startsWith("/canvas") },
 ];
 
 const base = "rounded-md px-3.5 py-2.5 font-medium";

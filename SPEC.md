@@ -32,9 +32,9 @@ Five screens, plus a sign-in page (email only). Every AI call shows a loading st
 
 | Screen | What the user does | Key states |
 | --- | --- | --- |
-| Library + Cards | Picks one of six public-domain texts. The Cards page lists every saved card and lets you add a quote directly with a typed source (from a Kindle, a paper book, anywhere) | Empty never happens: the six texts ship with the app |
+| Library | Picks one of six public-domain texts; each shows how many cards you've saved from it and how many are still unused | Empty never happens: the six texts ship with the app |
 | Reader | Reads, selects a passage (snapped to whole words), and a drawer asks for the gist (one sentence) and an optional title (a few words; without one, the gist's first words are used). Pure capture: no AI here. Saved passages stay underlined on reread, with a dot in the margin that reopens the card for editing | Saving card; save fails (draft kept, error shown); quote over 60 words |
-| Canvas (diverge) | Sees cards as nodes. Selects two or more cards and creates a synthesis card from them, or drags another card into an existing synthesis. A drawer opens: the AI asks how these sources combine to answer the session question (the one the next essay is on); the user then writes the synthesis: a title naming the move and a one-sentence claim, optionally tagged with the move (lens, fusion, lineage, counterweight, concession, test case). A synthesis can itself be a source, so connections can be connected. Zoom out shows titles, mid zoom shows gists and claims, zoom in shows quotes | Fewer than 2 cards: prompt to go read; streaming reply; a synthesis with no claim written yet isn't saved |
+| Canvas (diverge) | Sees cards as nodes, drags them into place (positions saved), and adds a quote from outside the library with a typed source. Clicking a card shows it, editable, with a link back to its passage in the book. Selects two or more cards and creates a synthesis card from them, or drags another card into an existing synthesis. A drawer opens: the AI asks how these sources combine to answer the session question (the one the next essay is on); the user then writes the synthesis: a title naming the move and a one-sentence claim, optionally tagged with the move (lens, fusion, lineage, counterweight, concession, test case). A synthesis can itself be a source, so connections can be connected. A toolbar toggle sets what every card shows: titles, gists (and claims), or quotes. (Detail that changes automatically with zoom level is cut for simplicity.) | Fewer than 2 cards: prompt to go read; streaming reply; a synthesis with no claim written yet isn't saved |
 | Write (converge) | Types a question or asks the AI for an unseen one, then gets a 15-minute timer. Writes a mini dissertation: a problématique plus two short paragraphs arguing opposite sides. Types @ to cite a card, quote or synthesis. No AI once the timer starts | Timer expired (auto-submit, work kept); no cards cited (allowed, flagged in feedback); autosave every few seconds |
 | Feedback | Sees a rubric score per dimension and, for every @ reference, the card quoted with a verdict: does it do argumentative work or is it decoration | Grading pending; grading fails (essay kept, retry button) |
 
@@ -99,7 +99,7 @@ Full-stack TypeScript on Next.js (App Router), deployed to Vercel, with Neon Pos
 | AI | Vercel AI SDK (`ai`) with xAI (`@ai-sdk/xai`, Grok) or OpenRouter (`@openrouter/ai-sdk-provider`, Claude), picked by which API key is set | Required by the brief; structured output and streaming in one API. Provider choice lives in one file, so features never change when it does |
 | Database | Neon Postgres via the Vercel marketplace integration | Server-side persistence; free tier; `DATABASE_URL` works locally too |
 | ORM | Drizzle | Typed schema, plain SQL feel, simple migrations |
-| Canvas | React Flow (`@xyflow/react`) | Nodes, drag-to-connect edges and zoom level out of the box; semantic zoom = render by zoom |
+| Canvas | React Flow (`@xyflow/react`) | Nodes, drag-to-connect edges, pan and zoom out of the box |
 | Essay editor | Tiptap with its Mention extension | @ autocomplete over cards without building an editor |
 | Validation | Zod | Shared by API input checks and AI output schemas |
 
@@ -108,7 +108,7 @@ Full-stack TypeScript on Next.js (App Router), deployed to Vercel, with Neon Pos
 | Action / route | Does |
 | --- | --- |
 | `signIn`, `signOut` | Find or create the learner by email, set or clear the cookie |
-| `saveQuoteCard`, `updateQuoteCard` | Validate and insert a quote card; edit its gist or title |
+| `saveQuoteCard`, `updateQuoteCard`, `moveCard` | Validate and insert a quote card; edit its gist or title; save its canvas position |
 | `saveSynthesisCard`, `addSource` | Save a synthesis with its source ids; add a source (rejects cycles) |
 | POST /api/cards/\[id\]/examine | Stream the synthesis examiner's turn (route handler, for `useChat`) |
 | `generateQuestion` | Generate an unseen question |
@@ -128,7 +128,7 @@ Six milestones in order, each ending in something that runs. Write mode and feed
    *Cut: an AI gist check on save.* Writing the gist is where the learning happens; a verdict on every card is passive, adds friction while reading, and checks comprehension, which isn't the hard part. Fidelity is still judged where it matters, when a card is cited in an essay.
 3. **Write mode (about 1.5 hours).** Type a question or generate an unseen one, 15-minute timer, Tiptap editor with @ over the learner's cards, autosave, practice and exam mode. *Done when:* an essay with two @ citations submits and its body and citations are stored.
 4. **Grader and feedback (about 1 hour).** Grader endpoint with Zod schema; feedback page with rubric and per-citation verdicts. *Done when:* a deliberately name-dropping citation is marked decorative and the reason quotes the card.
-5. **Canvas and synthesis (about 2 hours).** React Flow canvas of cards, create a synthesis card from selected cards, drag more sources in, streamed examiner chat in a drawer, claim and optional move submission, semantic zoom (title / gist / quote), examiner grounded in the session question. Keep the tooling light: most synthesis still happens while writing the essay. *Done when:* a synthesis of three cards, one of them itself a synthesis, survives a refresh and can be @-cited in an essay.
+5. **Canvas and synthesis (about 2 hours).** React Flow canvas of cards, create a synthesis card from selected cards, drag more sources in, streamed examiner chat in a drawer, claim and optional move submission, titles / gists / quotes toggle, examiner grounded in the session question. Keep the tooling light: most synthesis still happens while writing the essay. *Done when:* a synthesis of three cards, one of them itself a synthesis, survives a refresh and can be @-cited in an essay.
 6. **History and polish (about 1 hour).** History queries (unused cards, last weakness, encoding vs retrieval counts), question generation steered by them, last weakness passed to the grader, a small profile strip on the Library page, loading and error states everywhere. Deploy to Vercel. *Done when:* a second session's generated question visibly targets the first session's unused cards.
 
 ## Out of scope, and with more time

@@ -47,8 +47,9 @@ src/
   app/
     page.tsx            Library (/), static
     read/[slug]/        Reader: static book + the panel for selecting and saving cards
-    cards/              your cards, add a quote directly, and the card server actions
-    nav-links.tsx       header nav (Canvas and Write join it later)
+    canvas/             the board: your cards as draggable nodes, a titles / gists /
+                        quotes toggle, card details, "Add a quote"
+    nav-links.tsx       header nav (Write joins it in milestone 3)
     sign-in/            email sign-in (no password) and its server actions
   db/schema.ts          the tables: learners, cards, card_sources, essays, citations
   db/index.ts           Postgres client (works locally and on Neon)
@@ -57,6 +58,7 @@ src/
   lib/anchor.ts         find a saved quote again in a book
   lib/session.ts        who's signed in (reads the cookie)
   lib/shelf.ts          per-book card counts for the Library (total, unused)
+  lib/cards/            card server actions (save, edit, move), the client hook, the card shape
   lib/ai.ts             AI provider (xAI or OpenRouter, by key) and model per job
 scripts/          prepare-texts.ts: one-off, made data/texts/ from Gutenberg
 data/texts/       the books: <slug>.md + manifest.json (static, not in the DB)

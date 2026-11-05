@@ -22,6 +22,8 @@
   --quote: #f4f6df; /* quote box */
   --underline: #9aa3f0; /* passages you've already saved */
   --chat: #f1f1ec;
+  --board: #f6f6f2; /* canvas ground */
+  --board-dot: #d8d8d0;
   --warn: #9a3412;
   --warn-strong: #c2410c;
   --warn-soft: #fff6ee;
@@ -45,6 +47,7 @@
   --color-quote: var(--quote);
   --color-underline: var(--underline);
   --color-chat: var(--chat);
+  --color-board: var(--board);
   --color-warn: var(--warn);
   --color-warn-strong: var(--warn-strong);
   --color-warn-soft: var(--warn-soft);
