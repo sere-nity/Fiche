@@ -4,17 +4,12 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { getLearner } from "@/lib/session";
-import { getBook, getTextMeta } from "@/lib/texts";
-import { bookText, plainText } from "@/lib/book";
-import { findAnchor } from "@/lib/anchor";
-import { checkGist } from "@/lib/gist-check";
+import { getTextMeta } from "@/lib/texts";
 import { toCardView, type CardView } from "./card-view";
 
 /**
- * Saving a card is two calls, so the UI can show "saving" then "checking":
- *   1. saveQuoteCard: validate and insert, gist_check = "unchecked"
- *   2. runGistCheck:  ask the AI, update the row
- * If step 2 fails, the card is already safe and stays "unchecked" (retryable).
+ * Capture is pure: saving or editing a card involves no AI. The first AI the
+ * learner meets is on the canvas, where cards get connected.
  */
 
 export type ActionResult = { ok: true; card: CardView } | { ok: false; error: string };
@@ -72,7 +67,7 @@ const UpdateQuoteCard = z.object({
   title: z.string().trim().max(80).optional(),
 });
 
-/** Revise a card's gist or title. The old check no longer applies, so it's reset; the client re-runs it. */
+/** Edit a card's gist or title. */
 export async function updateQuoteCard(
   cardId: string,
   input: z.input<typeof UpdateQuoteCard>,
@@ -87,8 +82,6 @@ export async function updateQuoteCard(
     .set({
       gist: parsed.data.gist,
       title: parsed.data.title || titleFrom(parsed.data.gist),
-      gistCheck: "unchecked",
-      gistCheckReason: null,
     })
     .where(and(eq(schema.cards.id, cardId), eq(schema.cards.learnerId, learner.id)))
     .returning();
@@ -102,53 +95,17 @@ function titleFrom(gist: string): string {
   return words.length <= 6 ? words.join(" ") : `${words.slice(0, 6).join(" ")}…`;
 }
 
-export async function runGistCheck(cardId: string): Promise<ActionResult> {
+const Position = z.object({ x: z.number().finite(), y: z.number().finite() });
+
+/** Save where a card sits on the canvas (called when a drag ends). */
+export async function moveCard(cardId: string, position: z.input<typeof Position>): Promise<{ ok: boolean }> {
   const learner = await getLearner();
-  if (!learner) return { ok: false, error: "Sign in first." };
-
-  const db = getDb();
-  const where = and(eq(schema.cards.id, cardId), eq(schema.cards.learnerId, learner.id));
-  const [card] = await db.select().from(schema.cards).where(where);
-  if (!card || card.kind !== "quote" || !card.quote) return { ok: false, error: "Card not found." };
-
-  try {
-    const { source, passage } = await passageFor(card);
-    const result = await checkGist({ source, passage, quote: card.quote, title: card.title, gist: card.gist });
-    const [updated] = await db
-      .update(schema.cards)
-      .set({ gistCheck: result.verdict, gistCheckReason: result.reason })
-      .where(where)
-      .returning();
-    return { ok: true, card: toCardView(updated) };
-  } catch (err) {
-    console.error("gist check failed", err);
-    return { ok: false, error: "The check couldn't run. Your card is saved; try again later." };
-  }
-}
-
-/**
- * The context the gist is judged against. For a Reader card: the paragraph(s)
- * the quote sits in, found by anchor. For a quote added directly: the quote.
- */
-async function passageFor(card: typeof schema.cards.$inferSelect): Promise<{ source: string; passage: string }> {
-  const quote = card.quote ?? "";
-  const meta = card.textSlug ? getTextMeta(card.textSlug) : undefined;
-  if (!meta) return { source: card.typedSource ?? "unknown", passage: quote };
-
-  const source = `${meta.author}, ${meta.title}${meta.translator ? ` (tr. ${meta.translator})` : ""}`;
-  const blocks = await getBook(meta.slug);
-  const { text, starts } = bookText(blocks);
-  const pos = findAnchor(text, { quote, prefix: card.quotePrefix ?? "", suffix: card.quoteSuffix ?? "" });
-  if (!pos) return { source, passage: quote };
-
-  // Every block that overlaps the quote.
-  const passage = blocks
-    .filter((b, i) => {
-      const start = starts[i];
-      const end = start + plainText(b).length;
-      return start < pos.end && end > pos.start;
-    })
-    .map(plainText)
-    .join("\n\n");
-  return { source, passage };
+  const parsed = Position.safeParse(position);
+  if (!learner || !parsed.success) return { ok: false };
+  const p = { x: Math.round(parsed.data.x), y: Math.round(parsed.data.y) };
+  await getDb()
+    .update(schema.cards)
+    .set({ position: p })
+    .where(and(eq(schema.cards.id, cardId), eq(schema.cards.learnerId, learner.id)));
+  return { ok: true };
 }

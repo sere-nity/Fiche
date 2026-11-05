@@ -6,8 +6,8 @@
  * survives edits anywhere in the book except inside the quote itself, and the
  * context tells apart a phrase that appears more than once.
  *
- * `text` is the book's plain text (src/lib/book.ts bookText): the same string
- * the browser measures selections against.
+ * `text` is the rendered book's text (#book's textContent in the Reader): the
+ * same string the browser measures selections against.
  */
 
 export type Anchor = { quote: string; prefix: string; suffix: string };

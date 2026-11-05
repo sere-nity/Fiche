@@ -6,7 +6,7 @@ import { getDb, schema } from "@/db";
 import { getLearner } from "@/lib/session";
 import { getBook, getTextMeta, TEXTS } from "@/lib/texts";
 import { segments, type Block } from "@/lib/book";
-import { toCardView } from "@/app/cards/card-view";
+import { toCardView } from "@/lib/cards/card-view";
 import { ReaderPanel } from "./reader-panel";
 
 type Params = PageProps<"/read/[slug]">["params"];
@@ -77,9 +77,8 @@ async function Panel({ params }: { params: Params }) {
 }
 
 /**
- * The book. Each block's textContent must equal plainText(block) from
- * src/lib/book.ts, because highlights are measured in characters of that
- * text. So: only blocks inside #book, and no stray whitespace between them.
+ * The book. Highlights are measured in characters of #book's textContent, so
+ * keep only the book's blocks inside #book (no buttons or labels).
  */
 function BookText({ blocks }: { blocks: Block[] }) {
   return (

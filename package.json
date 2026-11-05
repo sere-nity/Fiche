@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.97",
+    "@ai-sdk/xai": "^5.0.39",
+    "@openrouter/ai-sdk-provider": "^3.1.0",
+    "@xyflow/react": "^12.12.1",
     "ai": "^7.0.163",
     "drizzle-orm": "^0.45.4",
     "next": "16.4.5",

@@ -13,7 +13,6 @@ import { pgTable, pgEnum, uuid, text, timestamp, jsonb, index, primaryKey, check
 // ---------- enums ----------
 
 export const cardKindEnum = pgEnum("card_kind", ["quote", "synthesis"]);
-export const gistCheckEnum = pgEnum("gist_check", ["faithful", "partly", "no", "unchecked"]);
 /** How a synthesis card combines its sources. Optional: naming the move is a nudge, not a gate. */
 export const moveEnum = pgEnum("synthesis_move", [
   "lens", // one idea reframes another
@@ -50,7 +49,7 @@ export const learners = pgTable("learners", {
  * Every node on the canvas is a card. Two kinds:
  *
  * - quote: an idea saved from a book (or typed in with its source). title +
- *   gist are the learner's own words; gist_check is the AI's fidelity check.
+ *   gist are the learner's own words. Capture is pure: no AI judges them.
  * - synthesis: a connection the learner wrote between other cards. title
  *   names the move, gist is the claim, sources live in card_sources. No quote.
  *   A synthesis can itself be a source, so connections can be connected.
@@ -80,8 +79,6 @@ export const cards = pgTable(
     gist: text("gist").notNull(),
     title: text("title").notNull(),
     move: moveEnum("move"),
-    gistCheck: gistCheckEnum("gist_check").notNull().default("unchecked"),
-    gistCheckReason: text("gist_check_reason"),
     position: jsonb("position").$type<Position>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

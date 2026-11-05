@@ -6,7 +6,7 @@ Fiche trains one skill: linking ideas from the great books to a question you hav
 
 ## Stack
 
-Next.js 16 (App Router, Cache Components) · TypeScript · Drizzle ORM · Postgres (Neon in production, any Postgres locally) · Tailwind v4 · AI SDK 7 + Anthropic · Zod
+Next.js 16 (App Router, Cache Components) · TypeScript · Drizzle ORM · Postgres (Neon in production, any Postgres locally) · Tailwind v4 · AI SDK 7 (xAI or OpenRouter) · Zod
 
 ## Run locally
 
@@ -20,7 +20,7 @@ cp .env.example .env.local
 #    then set DATABASE_URL in .env.local to either:
 #    - local:  postgres://YOUR_USER@localhost:5432/fiche   (createdb fiche first)
 #    - Neon:   the *pooled* connection string from the Neon console
-#    and ANTHROPIC_API_KEY for the gist check (without it, cards save as "unchecked")
+#    and XAI_API_KEY or OPENROUTER_API_KEY for AI calls (needed from milestone 3; capture works without)
 
 # 2. Create the tables
 npm run db:migrate
@@ -47,8 +47,7 @@ src/
   app/
     page.tsx            Library (/), static
     read/[slug]/        Reader: static book + the panel for selecting and saving cards
-    cards/              your cards, add a quote directly, the card server actions,
-                        and the check-status box (verdict colours shared with Feedback later)
+    cards/              your cards, add a quote directly, and the card server actions
     nav-links.tsx       header nav (Canvas and Write join it later)
     sign-in/            email sign-in (no password) and its server actions
   db/schema.ts          the tables: learners, cards, card_sources, essays, citations
@@ -58,8 +57,7 @@ src/
   lib/anchor.ts         find a saved quote again in a book
   lib/session.ts        who's signed in (reads the cookie)
   lib/shelf.ts          per-book card counts for the Library (total, unused)
-  lib/gist-check.ts     AI job: does the gist say what the passage says?
-  lib/ai.ts             which model each AI job uses
+  lib/ai.ts             AI provider (xAI or OpenRouter, by key) and model per job
 scripts/          prepare-texts.ts: one-off, made data/texts/ from Gutenberg
 data/texts/       the books: <slug>.md + manifest.json (static, not in the DB)
 drizzle/          generated SQL migrations

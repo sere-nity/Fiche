@@ -29,6 +29,13 @@
       "when": 1793897978684,
       "tag": "0003_learners",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793901710651,
+      "tag": "0004_drop_gist_check",
+      "breakpoints": true
     }
   ]
 }

@@ -10,8 +10,8 @@ export type CardView = {
   quoteSuffix: string | null;
   textSlug: string | null;
   typedSource: string | null;
-  gistCheck: "faithful" | "partly" | "no" | "unchecked";
-  gistCheckReason: string | null;
+  /** Where it sits on the canvas; null until the learner first drags it. */
+  position: { x: number; y: number } | null;
 };
 
 export function toCardView(row: typeof schema.cards.$inferSelect): CardView {
@@ -24,7 +24,6 @@ export function toCardView(row: typeof schema.cards.$inferSelect): CardView {
     quoteSuffix: row.quoteSuffix,
     textSlug: row.textSlug,
     typedSource: row.typedSource,
-    gistCheck: row.gistCheck,
-    gistCheckReason: row.gistCheckReason,
+    position: row.position ?? null,
   };
 }

@@ -4,9 +4,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { createAnchor, findAnchor, type Anchor } from "@/lib/anchor";
-import { useCards } from "@/app/cards/use-cards";
-import { CheckStatus, VERDICT } from "@/app/cards/check-status";
-import type { CardView } from "@/app/cards/card-view";
+import { useCards } from "@/lib/cards/use-cards";
+import type { CardView } from "@/lib/cards/card-view";
 
 const MAX_WORDS = 60;
 
@@ -17,9 +16,10 @@ type Pos = { start: number; end: number };
  * The interactive half of the Reader. The book itself is server-rendered
  * static HTML in #book; this component finds it in the DOM and:
  * - turns a text selection into a draft card (quote + context anchor)
- * - saves cards, shows their gist check, and lets you revise the gist
+ * - saves cards (pure capture: no AI here), and lets you edit one later
  * - marks saved passages: an underline painted with the CSS Custom Highlight
- *   API (no DOM changes, so it can't fight React), plus a dot in the margin
+ *   API (no DOM changes, so it can't fight React), plus a dot in the margin;
+ *   clicking either opens that card
  *
  * The panel is a drawer, closed by default so the text has the page. It opens
  * on a selection (new card), a margin dot (that card) or the "Cards" button
@@ -34,7 +34,7 @@ export function ReaderPanel({
   signedIn: boolean;
   initialCards: CardView[];
 }) {
-  const { cards, checking, checkErrors, save, update, check } = useCards(initialCards);
+  const { cards, save, update } = useCards(initialCards);
   const [mode, setMode] = useState<Mode>({ kind: "closed" });
   const [gist, setGist] = useState("");
   const [title, setTitle] = useState("");
@@ -71,13 +71,47 @@ export function ReaderPanel({
     setTitle(card?.title ?? "");
   }
 
-  // Selecting text opens a draft. Clicking elsewhere without selecting closes
-  // the drawer, unless there are unsaved edits. Escape always closes it.
+  // Where each card sits in the book (null if its quote can't be found), in reading order.
+  const located = useMemo(
+    () =>
+      cards
+        .map((card) => ({
+          card,
+          pos: card.quote
+            ? findAnchor(bookText, {
+                quote: card.quote,
+                prefix: card.quotePrefix ?? "",
+                suffix: card.quoteSuffix ?? "",
+              })
+            : null,
+        }))
+        .sort((a, b) => (a.pos?.start ?? Infinity) - (b.pos?.start ?? Infinity)),
+    [cards, bookText],
+  );
+
+  // Where each paragraph starts in the book's text, for turning a click into a character offset.
+  const blockStarts = useMemo(() => {
+    const starts = new Map<Element, number>();
+    let n = 0;
+    for (const el of Array.from(book?.children ?? [])) {
+      starts.set(el, n);
+      n += el.textContent?.length ?? 0;
+    }
+    return starts;
+  }, [book]);
+
+  // Selecting text opens a draft. Clicking an underlined passage opens its
+  // card. Clicking anywhere else closes the drawer, unless there are unsaved
+  // edits. Escape always closes it.
   const dirtyRef = useRef(dirty);
+  const locatedRef = useRef(located);
+  const openCardRef = useRef((id: string) => show({ kind: "card", id }));
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     dirtyRef.current = dirty;
-  }, [dirty]);
+    locatedRef.current = located;
+    openCardRef.current = (id: string) => show({ kind: "card", id });
+  });
   useEffect(() => {
     if (!book) return;
     const fromSelection = () => {
@@ -96,9 +130,12 @@ export function ReaderPanel({
         // The lime highlight now shows the word-snapped passage; drop the
         // browser's own selection so the two don't overlap.
         window.getSelection()?.removeAllRanges();
-      } else if (!dirtyRef.current) {
-        setMode({ kind: "closed" });
+        return;
       }
+      if (dirtyRef.current) return; // don't throw away unsaved edits
+      const hit = cardAt(book, blockStarts, locatedRef.current, e.clientX, e.clientY);
+      if (hit) openCardRef.current(hit);
+      else setMode({ kind: "closed" });
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMode({ kind: "closed" });
@@ -110,25 +147,36 @@ export function ReaderPanel({
       document.removeEventListener("pointerup", onPointerUp);
       document.removeEventListener("keyup", onKeyUp);
     };
-  }, [book, margin, bookText]);
+  }, [book, margin, bookText, blockStarts]);
 
-  // Where each card sits in the book (null if its quote can't be found), in reading order.
-  const located = useMemo(
-    () =>
-      cards
-        .map((card) => ({
-          card,
-          pos: card.quote
-            ? findAnchor(bookText, {
-                quote: card.quote,
-                prefix: card.quotePrefix ?? "",
-                suffix: card.quoteSuffix ?? "",
-              })
-            : null,
-        }))
-        .sort((a, b) => (a.pos?.start ?? Infinity) - (b.pos?.start ?? Infinity)),
-    [cards, bookText],
-  );
+  // Hovering an underlined passage: pointer cursor and a faint wash, so it reads as clickable.
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!book) return;
+    let frame = 0;
+    const onMove = (e: PointerEvent) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() =>
+        setHoverId(cardAt(book, blockStarts, locatedRef.current, e.clientX, e.clientY)),
+      );
+    };
+    const onLeave = () => setHoverId(null);
+    book.addEventListener("pointermove", onMove);
+    book.addEventListener("pointerleave", onLeave);
+    return () => {
+      cancelAnimationFrame(frame);
+      book.removeEventListener("pointermove", onMove);
+      book.removeEventListener("pointerleave", onLeave);
+    };
+  }, [book, blockStarts]);
+  useEffect(() => {
+    if (!book) return;
+    // Cursor via an attribute on <html> (styled in globals.css), like the drawer flag.
+    if (hoverId) document.documentElement.dataset.hoverCard = "";
+    else delete document.documentElement.dataset.hoverCard;
+    const pos = located.find((l) => l.card.id === hoverId)?.pos;
+    paint("fiche-hover", [pos ? rangeAt(book, pos) : null]);
+  }, [book, hoverId, located]);
 
   // Paint: saved passages underlined; the draft (or the opened card) in lime.
   useEffect(() => {
@@ -183,11 +231,9 @@ export function ReaderPanel({
       });
       setBusy(false);
       if (!r.ok) return setError(r.error);
+      // Back to reading: the new underline and margin dot confirm the save.
       window.getSelection()?.removeAllRanges();
-      // Stay on the card so its check result appears here, next to the gist.
-      setMode({ kind: "card", id: r.card.id });
-      setGist(r.card.gist);
-      setTitle(r.card.title);
+      setMode({ kind: "closed" });
     } else if (openCard) {
       const r = await update(openCard.id, { gist, title });
       setBusy(false);
@@ -239,12 +285,11 @@ export function ReaderPanel({
               signedIn={signedIn}
               slug={slug}
               located={located}
-              checking={checking}
               onOpen={jumpTo}
               onClose={() => setMode({ kind: "closed" })}
             />
           ) : (
-            <form onSubmit={onSubmit} className="flex min-h-full flex-col gap-5 px-6 py-7">
+            <form onSubmit={onSubmit} className="flex flex-col gap-5 px-6 py-7">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-[15px] font-semibold">{mode.kind === "draft" ? "New card" : "Card"}</h2>
                 <div className="flex items-center gap-1">
@@ -309,22 +354,14 @@ export function ReaderPanel({
                     />
                   </div>
 
-                  {openCard && (
-                    <CheckStatus
-                      card={openCard}
-                      checking={checking.has(openCard.id)}
-                      error={checkErrors[openCard.id]}
-                      onRetry={() => check(openCard.id)}
-                    />
-                  )}
-
                   {error && (
                     <p role="alert" className="text-warn">
                       {error}
                     </p>
                   )}
 
-                  <div className="mt-auto flex gap-2">
+                  {/* Right under the fields, not pinned to the bottom of the drawer, so it's always in view. */}
+                  <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => setMode({ kind: "closed" })}
@@ -377,14 +414,12 @@ function CardList({
   signedIn,
   slug,
   located,
-  checking,
   onOpen,
   onClose,
 }: {
   signedIn: boolean;
   slug: string;
   located: { card: CardView; pos: Pos | null }[];
-  checking: ReadonlySet<string>;
   onOpen: (id: string) => void;
   onClose: () => void;
 }) {
@@ -410,27 +445,18 @@ function CardList({
       ) : (
         located.length > 0 && (
           <ul className="flex flex-col overflow-hidden rounded-[10px] border border-rule">
-            {located.map(({ card }, i) => {
-              const v = VERDICT[card.gistCheck];
-              const isChecking = checking.has(card.id);
-              return (
-                <li key={card.id} className={i > 0 ? "border-t border-rule-soft" : ""}>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(card.id)}
-                    className="flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-background"
-                  >
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="font-serif text-base leading-snug">{card.title}</span>
-                      <span className={`shrink-0 text-[11px] font-semibold ${isChecking ? "text-muted" : v.heading}`}>
-                        {isChecking ? "Checking…" : v.label}
-                      </span>
-                    </span>
-                    <span className="line-clamp-2 text-[13px] leading-snug text-secondary">{card.gist}</span>
-                  </button>
-                </li>
-              );
-            })}
+            {located.map(({ card }, i) => (
+              <li key={card.id} className={i > 0 ? "border-t border-rule-soft" : ""}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(card.id)}
+                  className="flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-background"
+                >
+                  <span className="font-serif text-base leading-snug">{card.title}</span>
+                  <span className="line-clamp-2 text-[13px] leading-snug text-secondary">{card.gist}</span>
+                </button>
+              </li>
+            ))}
           </ul>
         )
       )}
@@ -470,6 +496,49 @@ function useMarginDots(
 }
 
 // ---------- DOM helpers ----------
+
+/**
+ * The saved card whose underlined passage is under the point (x, y), if any.
+ * Highlights painted by the CSS Custom Highlight API don't receive events, so:
+ * find the character under the pointer, look for a card covering it, then
+ * confirm the point is really on that passage's text (not past a line's end).
+ */
+function cardAt(
+  book: HTMLElement,
+  blockStarts: Map<Element, number>,
+  located: { card: CardView; pos: Pos | null }[],
+  x: number,
+  y: number,
+): string | null {
+  const caret = caretAt(x, y);
+  if (!caret || !book.contains(caret.node)) return null;
+  let block: Element | null = caret.node instanceof Element ? caret.node : caret.node.parentElement;
+  while (block && block.parentElement !== book) block = block.parentElement;
+  const blockStart = block ? blockStarts.get(block) : undefined;
+  if (!block || blockStart === undefined) return null;
+
+  const upToCaret = document.createRange();
+  upToCaret.setStart(block, 0);
+  upToCaret.setEnd(caret.node, caret.offset);
+  const offset = blockStart + upToCaret.toString().length;
+
+  for (const { card, pos } of located) {
+    if (!pos || offset < pos.start || offset > pos.end) continue;
+    const rects = rangeAt(book, pos)?.getClientRects() ?? [];
+    if (Array.from(rects).some((r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) return card.id;
+  }
+  return null;
+}
+
+/** The text position under a point, in whichever API this browser has. */
+function caretAt(x: number, y: number): { node: Node; offset: number } | null {
+  if (typeof document.caretPositionFromPoint === "function") {
+    const p = document.caretPositionFromPoint(x, y);
+    return p ? { node: p.offsetNode, offset: p.offset } : null;
+  }
+  const r = document.caretRangeFromPoint?.(x, y); // older Safari
+  return r ? { node: r.startContainer, offset: r.startOffset } : null;
+}
 
 const noSubscribe = () => () => {}; // the book never changes after load
 

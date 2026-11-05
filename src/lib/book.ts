@@ -8,10 +8,9 @@
  *   > a line of verse   indented quotation, line breaks kept
  *   A plain paragraph, with _italics_.
  *
- * The plain text matters: highlights are anchored by character offsets into
- * it. The Reader renders each block so that its DOM textContent is exactly
- * plainText(block), so the browser (measuring a selection) and the server
- * (finding a passage for the gist check) see the same string.
+ * Highlights are anchored by character offsets into the rendered book's text
+ * (#book's textContent): the browser measures a selection against it and finds
+ * saved quotes in it, so the same string is used both ways.
  */
 
 export type BlockKind = "heading" | "num" | "verse" | "p";
@@ -40,22 +39,4 @@ export function segments(text: string): Segment[] {
     .split(/_([^_\n]+)_/)
     .map((t, i) => ({ text: t, em: i % 2 === 1 }))
     .filter((s) => s.text.length > 0);
-}
-
-/** What a reader sees for one block: the text without Markdown markers. */
-export function plainText(block: Block): string {
-  return segments(block.text)
-    .map((s) => s.text)
-    .join("");
-}
-
-/** The whole book as the reader sees it, plus where each block starts in that string. */
-export function bookText(blocks: Block[]): { text: string; starts: number[] } {
-  const starts: number[] = [];
-  let text = "";
-  for (const b of blocks) {
-    starts.push(text.length);
-    text += plainText(b);
-  }
-  return { text, starts };
 }
