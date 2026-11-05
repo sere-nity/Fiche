@@ -1,28 +1,23 @@
 @import "tailwindcss";
 
-/*
- * Design tokens, from the Fiche design canvas. Light only, as designed.
- * Verdicts use blue (good) against orange (needs work): they differ in
- * lightness as well as hue, so they read for colour-blind users too.
- */
 :root {
   --background: #fbfbf8;
   --surface: #ffffff;
   --foreground: #17171c;
-  --secondary: #3d3d45; /* body text on surfaces */
-  --muted: #5e5e66; /* labels */
-  --faint: #8a8a92; /* placeholders */
+  --secondary: #3d3d45;
+  --muted: #5e5e66;
+  --faint: #8a8a92;
   --rule: #e3e3de;
   --rule-soft: #efefea;
-  --field: #c9c9c2; /* input borders */
+  --field: #c9c9c2;
   --accent: #2e3bd1;
   --accent-hover: #1f2899;
   --accent-soft: #e8eafc;
-  --highlight: #e6f59a; /* the passage you're making a card from */
-  --quote: #f4f6df; /* quote box */
-  --underline: #9aa3f0; /* passages you've already saved */
+  --highlight: #e6f59a;
+  --quote: #f4f6df;
+  --underline: #9aa3f0;
   --chat: #f1f1ec;
-  --board: #f6f6f2; /* canvas ground */
+  --board: #f6f6f2;
   --board-dot: #d8d8d0;
   --warn: #9a3412;
   --warn-strong: #c2410c;
@@ -61,18 +56,12 @@ body {
   color: var(--foreground);
 }
 
-/*
- * Reader: the cards drawer is 380px wide on the right. On screens too narrow
- * for it to fit in the margin beside the 760px text column, shift the text
- * left while it's open so the drawer never covers the passage.
- */
 @media (min-width: 1024px) and (max-width: 1599px) {
   html[data-drawer="open"] #reader-main {
     padding-right: calc(380px + 2rem);
   }
 }
 
-/* Reader highlights, painted with the CSS Custom Highlight API (no DOM changes). */
 ::highlight(fiche-card) {
   text-decoration: underline;
   text-decoration-color: var(--underline);

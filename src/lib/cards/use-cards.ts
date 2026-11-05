@@ -1,36 +1,49 @@
 "use client";
 
 import { useState } from "react";
-import { saveQuoteCard, updateQuoteCard } from "./actions";
+import {
+    saveQuoteCard,
+    updateQuoteCard,
+    type ActionResult,
+    type SaveQuoteInput,
+    type UpdateQuoteInput,
+} from "./actions";
 import type { CardView } from "./card-view";
 
-type SaveInput = Parameters<typeof saveQuoteCard>[0];
-type Result = { ok: true; card: CardView } | { ok: false; error: string };
-const OFFLINE: Result = { ok: false, error: "Couldn't save. Check your connection and try again." };
+const SAVE_ERROR = "Couldn't save. Check your connection and try again.";
 
-/** A list of cards plus save and edit, shared by the Reader and the Cards page. */
-export function useCards(initial: CardView[]) {
-  const [cards, setCards] = useState(initial);
+export function useCards(initialCards: CardView[]) {
+    const [cards, setCards] = useState(initialCards);
+    const [serverCards, setServerCards] = useState(initialCards);
 
-  async function save(input: SaveInput): Promise<Result> {
-    try {
-      const r = await saveQuoteCard(input);
-      if (r.ok) setCards((cs) => [r.card, ...cs]);
-      return r;
-    } catch {
-      return OFFLINE;
+    if (initialCards !== serverCards) {
+        setServerCards(initialCards);
+        setCards(initialCards);
     }
-  }
 
-  async function update(id: string, input: { gist: string; title?: string }): Promise<Result> {
-    try {
-      const r = await updateQuoteCard(id, input);
-      if (r.ok) setCards((cs) => cs.map((c) => (c.id === id ? r.card : c)));
-      return r;
-    } catch {
-      return OFFLINE;
+    async function save(input: SaveQuoteInput): Promise<ActionResult> {
+        try {
+            const result = await saveQuoteCard(input);
+            if (result.ok) {
+                setCards((previous) => [result.card, ...previous]);
+            }
+            return result;
+        } catch {
+            return { ok: false, error: SAVE_ERROR };
+        }
     }
-  }
 
-  return { cards, save, update };
+    async function update(id: string, input: UpdateQuoteInput): Promise<ActionResult> {
+        try {
+            const result = await updateQuoteCard(id, input);
+            if (result.ok) {
+                setCards((previous) => previous.map((card) => card.id === id ? result.card : card));
+            }
+            return result;
+        } catch {
+            return { ok: false, error: SAVE_ERROR };
+        }
+    }
+
+    return { cards, save, update };
 }
