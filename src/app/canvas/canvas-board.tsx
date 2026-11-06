@@ -88,35 +88,28 @@ function Board({
     }
     const [panel, setPanel] = useState<PanelMode>({ kind: "closed" });
     const [detailLevel, setDetailLevel] = useState<DetailLevel>("gists");
-    const dragStartRef = useRef(new Map<string, XYPosition>());
+    const dragStartRef = useRef<XYPosition | null>(null);
     const [isMoving, setIsMoving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { zoom } = useViewport();
     const flow = useReactFlow();
 
-    async function handleDragStop(dragged: CardNode[]) {
-        if (dragged.every((card) => {
-            const start = dragStartRef.current.get(card.id);
-            return start?.x === card.position.x && start?.y === card.position.y;
-        })) {
+    async function handleDragStop(card: CardNode) {
+        const start = dragStartRef.current;
+        if (!start || (start.x === card.position.x && start.y === card.position.y)) {
             return;
         }
         setError(null);
         setIsMoving(true);
         try {
-            const outcomes = await Promise.allSettled(dragged.map(async (card) => {
-                const result = await moveCard(card.id, card.position);
-                return { id: card.id, ok: result.ok };
-            }));
-            const failed = dragged.filter((_, index) => {
-                const outcome = outcomes[index];
-                return outcome.status === "rejected" || !outcome.value.ok;
-            });
-            if (failed.length > 0) {
-                setNodes((previous) => previous.map((card) => failed.some((failedCard) => failedCard.id === card.id)
-                    ? { ...card, position: dragStartRef.current.get(card.id) ?? card.position } : card));
-                setError("Couldn't save the move. The cards are back where they were; try again.");
+            const result = await moveCard(card.id, card.position);
+            if (!result.ok) {
+                throw new Error("Couldn't save the move.");
             }
+        } catch {
+            setNodes((previous) => previous.map((node) =>
+                node.id === card.id ? { ...node, position: start } : node));
+            setError("Couldn't save the move. The card is back where it was; try again.");
         } finally {
             setIsMoving(false);
         }
@@ -152,7 +145,7 @@ function Board({
     }
 
     function selectCards(ids: string[]) {
-        setNodes((previous) => previous.map((node) => ({ ...node, selected: ids.includes(node.id) })));
+        setNodes((previous) => previous.map((node) => ({ ...node, selected: ids.length === 1 && node.id === ids[0] })));
         if (ids.length === 2) {
             setPanel({ kind: "link", ids: ids.sort() });
         } else if (ids.length === 1) {
@@ -229,11 +222,11 @@ function Board({
                                 onNodesChange={(changes) =>
                                     setNodes((previous) => applyNodeChanges(changes, previous))
                                 }
-                                onNodeDragStart={(_, _node, dragged) => {
-                                    dragStartRef.current = new Map(dragged.map((card) => [card.id, { ...card.position }]));
+                                onNodeDragStart={(_, node) => {
+                                    dragStartRef.current = { ...node.position };
                                     setError(null);
                                 }}
-                                onNodeDragStop={(_, _node, dragged) => void handleDragStop(dragged)}
+                                onNodeDragStop={(_, node) => void handleDragStop(node)}
                                 onNodeClick={(event, node) => {
                                     if ((event.target as Element).closest(".react-flow__handle")) {
                                         return;
