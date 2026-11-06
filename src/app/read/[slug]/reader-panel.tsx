@@ -1,5 +1,6 @@
 "use client";
 
+import type { UIMessage } from "ai";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { createAnchor, findAnchor } from "@/lib/anchor";
@@ -20,12 +21,15 @@ export function ReaderPanel({
     signedIn: boolean;
     initialCards: CardView[];
 }) {
-    const { cards, save, update } = useCards(initialCards);
+    const { cards, save, update, setChat } = useCards(initialCards);
+    const chatRef = useRef<UIMessage[]>([]);
     const [mode, setMode] = useState<ReaderMode>({ kind: "closed" });
     const [gist, setGist] = useState("");
     const [title, setTitle] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [isChatting, setIsChatting] = useState(false);
+    const [isChatBusy, setIsChatBusy] = useState(false);
 
     // The book and margin are rendered outside this component.
     const book = useSyncExternalStore(
@@ -47,11 +51,15 @@ export function ReaderPanel({
     } else if (openCard) {
         hasChanges = gist.trim() !== openCard.gist || title.trim() !== openCard.title;
     }
+    // A started chat is work too: clicking the book shouldn't close the panel on it.
+    const keepOpen = hasChanges || isChatting;
 
     function showPanel(next: ReaderMode) {
         setMode(next);
         setError(null);
+        setIsChatting(false);
         const card = next.kind === "card" ? cards.find((card) => card.id === next.id) : undefined;
+        chatRef.current = card?.chat ?? [];
         setGist(card?.gist ?? "");
         setTitle(card?.title ?? "");
     }
@@ -83,12 +91,12 @@ export function ReaderPanel({
         return starts;
     }, [book]);
 
-    const hasChangesRef = useRef(hasChanges);
+    const keepOpenRef = useRef(keepOpen);
     const locatedRef = useRef(located);
     const openCardRef = useRef((id: string) => showPanel({ kind: "card", id }));
     const panelRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
-        hasChangesRef.current = hasChanges;
+        keepOpenRef.current = keepOpen;
         locatedRef.current = located;
         openCardRef.current = (id: string) => showPanel({ kind: "card", id });
     });
@@ -105,6 +113,8 @@ export function ReaderPanel({
             setGist("");
             setTitle("");
             setError(null);
+            setIsChatting(false);
+            chatRef.current = [];
             return true;
         };
         const onPointerUp = (event: PointerEvent) => {
@@ -117,7 +127,7 @@ export function ReaderPanel({
                 window.getSelection()?.removeAllRanges();
                 return;
             }
-            if (hasChangesRef.current) {
+            if (keepOpenRef.current) {
                 return;
             }
             const hit = cardAt(book, blockStarts, locatedRef.current, event.clientX, event.clientY);
@@ -132,7 +142,7 @@ export function ReaderPanel({
             if (event.key === "Escape") {
                 setMode({ kind: "closed" });
             }
-            else {
+            else if (book.contains(event.target as Node)) {
                 fromSelection();
             }
         };
@@ -240,6 +250,9 @@ export function ReaderPanel({
 
     async function handleSubmit(event: React.FormEvent) {
         event.preventDefault();
+        if (isSaving || isChatBusy) {
+            return;
+        }
         setIsSaving(true);
         setError(null);
         if (mode.kind === "draft") {
@@ -251,6 +264,7 @@ export function ReaderPanel({
                 quoteSuffix: anchor.suffix,
                 gist,
                 title,
+                chat: chatRef.current,
             });
             setIsSaving(false);
             if (!result.ok) {
@@ -259,7 +273,11 @@ export function ReaderPanel({
             }
 
             window.getSelection()?.removeAllRanges();
-            setMode({ kind: "closed" });
+            if (isChatting) {
+                setMode({ kind: "card", id: result.card.id });
+            } else {
+                setMode({ kind: "closed" });
+            }
         } else if (openCard) {
             const result = await update(openCard.id, { gist, title });
             setIsSaving(false);
@@ -312,6 +330,8 @@ export function ReaderPanel({
                     title={title}
                     error={error}
                     isSaving={isSaving}
+                    isChatBusy={isChatBusy}
+                    onChatBusyChange={setIsChatBusy}
                     hasChanges={hasChanges}
                     onGistChange={setGist}
                     onTitleChange={setTitle}
@@ -319,6 +339,13 @@ export function ReaderPanel({
                     onClose={() => setMode({ kind: "closed" })}
                     onShowList={() => showPanel({ kind: "list" })}
                     onOpenCard={scrollToCard}
+                    onChatSend={() => setIsChatting(true)}
+                    onChatMessages={(messages) => {
+                        chatRef.current = messages;
+                        if (mode.kind === "card") {
+                            setChat(mode.id, messages);
+                        }
+                    }}
                 />
             )}
         </div>

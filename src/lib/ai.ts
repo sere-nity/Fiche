@@ -3,21 +3,25 @@ import { defaultSettingsMiddleware, wrapLanguageModel, type LanguageModel } from
 import { xai } from "@ai-sdk/xai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 
-export function pick(models: { xai: string; openrouter: string; xaiReasoning?: "low" | "medium" | "high" }): LanguageModel {
-    if (process.env.XAI_API_KEY) {
-        const model = xai(models.xai);
-        if (!models.xaiReasoning) {
-            return model;
-        }
+type ModelChoice = { openrouter: string; xai: string; xaiReasoning?: "low" | "medium" | "high" };
 
-        return wrapLanguageModel({
-            model,
-            middleware: defaultSettingsMiddleware({
-                settings: { providerOptions: { xai: { reasoningEffort: models.xaiReasoning } } },
-            }),
-        });
+// OpenRouter wins when both keys are set (measured faster, and prompts assume Claude).
+export function pick(choice: ModelChoice): LanguageModel {
+    if (process.env.OPENROUTER_API_KEY || !process.env.XAI_API_KEY) {
+        return createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })(choice.openrouter);
     }
-    return createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })(models.openrouter);
+    const model = xai(choice.xai);
+    if (!choice.xaiReasoning) {
+        return model;
+    }
+    return wrapLanguageModel({
+        model,
+        middleware: defaultSettingsMiddleware({
+            settings: { providerOptions: { xai: { reasoningEffort: choice.xaiReasoning } } },
+        }),
+    });
 }
 
-export const models = {} satisfies Record<string, LanguageModel>;
+export const models = {
+    chat: pick({ openrouter: "anthropic/claude-sonnet-5.5", xai: "grok-4.7", xaiReasoning: "low" }),
+} satisfies Record<string, LanguageModel>;

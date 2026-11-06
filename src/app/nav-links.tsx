@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const LINKS = [
     { href: "/", label: "Library", match: (pathname: string) => pathname === "/" || pathname.startsWith("/read") },
     { href: "/canvas", label: "Canvas", match: (pathname: string) => pathname.startsWith("/canvas") },
+    { href: "/write", label: "Write", match: (pathname: string) => pathname.startsWith("/write") },
 ];
 
 const base = "rounded-md px-3.5 py-2.5 font-medium";

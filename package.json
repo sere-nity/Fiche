@@ -11,11 +11,22 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "texts:prepare": "tsx scripts/prepare-texts.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:citations": "tsx --test scripts/test-citations.ts",
+    "test:canvas": "tsx --test scripts/test-canvas.ts",
+    "db:seed": "tsx scripts/seed-demo.ts",
+    "test:grading": "tsx --test scripts/test-grading.ts"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.167",
     "@ai-sdk/xai": "^5.0.39",
     "@openrouter/ai-sdk-provider": "^3.1.0",
+    "@tiptap/core": "^3.33.0",
+    "@tiptap/extension-mention": "^3.33.0",
+    "@tiptap/pm": "^3.33.0",
+    "@tiptap/react": "^3.33.0",
+    "@tiptap/starter-kit": "^3.33.0",
+    "@tiptap/suggestion": "^3.33.0",
     "@xyflow/react": "^12.12.1",
     "ai": "^7.0.163",
     "drizzle-orm": "^0.45.4",
