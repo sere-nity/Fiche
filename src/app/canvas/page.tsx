@@ -27,6 +27,12 @@ async function CanvasLoader() {
         .where(eq(schema.cards.learnerId, learner.id))
         .orderBy(asc(schema.cards.createdAt));
 
+    const links = await getDb()
+        .select({ cardId: schema.cardSources.cardId, sourceId: schema.cardSources.sourceId })
+        .from(schema.cardSources)
+        .innerJoin(schema.cards, eq(schema.cards.id, schema.cardSources.cardId))
+        .where(eq(schema.cards.learnerId, learner.id));
+
     const books = Object.fromEntries(TEXTS.map((text) => [text.slug, { author: text.author, title: text.title }]));
-    return <CanvasBoard initialCards={rows.map(toCardView)} books={books} />;
+    return <CanvasBoard initialCards={rows.map(toCardView)} initialLinks={links} books={books} />;
 }

@@ -12,9 +12,6 @@ export default function SignInPage() {
             <Suspense>
                 <SignInForm />
             </Suspense>
-            <p className="mt-6 text-xs leading-normal text-muted">
-                Prototype: there is no password, so don&apos;t use this for anything private.
-            </p>
         </main>
     );
 }

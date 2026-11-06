@@ -1,49 +1,56 @@
 "use client";
 
-import { createContext, useContext, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
     applyNodeChanges,
     Background,
     BackgroundVariant,
+    ConnectionMode,
     ReactFlow,
     ReactFlowProvider,
     useReactFlow,
     useViewport,
-    type Node,
-    type NodeChange,
-    type NodeProps,
+    type Edge,
+    type XYPosition,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import type { UIMessage } from "ai";
 import { useCards } from "@/lib/cards/use-cards";
-import { moveCard, type SaveQuoteInput } from "@/lib/cards/actions";
-import type { CardView } from "@/lib/cards/card-view";
+import { moveCard } from "@/lib/cards/actions";
+import type { CardLink, CardView } from "@/lib/cards/card-view";
 import { CanvasPanel, type PanelMode } from "./canvas-panel";
+import { connectionHandles, synthesisPosition } from "./canvas-layout";
+import { CanvasDisplayContext, Toolbar, nodeTypes, type CardNode, type DetailLevel } from "./canvas-controls";
 
 export type Books = Record<string, { author: string; title: string }>;
 
-type DetailLevel = "titles" | "gists" | "quotes";
-const LEVELS: [DetailLevel, string][] = [
-    ["titles", "Titles"],
-    ["gists", "Gists"],
-    ["quotes", "Quotes"],
-];
-const DetailContext = createContext<DetailLevel>("gists");
-
-type CardNode = Node<{ card: CardView; label: string }, "card">;
-
 const getGridPosition = (index: number) => ({ x: (index % 4) * 260, y: Math.floor(index / 4) * 150 });
 
-function toNode(card: CardView, index: number, books: Books): CardNode {
+function toNode(card: CardView, index: number, books: Books, links: CardLink[]): CardNode {
     const book = card.textSlug ? books[card.textSlug] : undefined;
+    const label =
+        card.kind === "synthesis"
+            ? "Synthesis · " + links.filter((link) => link.cardId === card.id).length
+            : (book?.author ?? card.typedSource ?? "");
+    return { id: card.id, type: "card", deletable: card.kind === "synthesis", position: card.position ?? getGridPosition(index), data: { card, label } };
+}
+
+function toEdge(link: CardLink, cards: CardView[], nodes: CardNode[]): Edge {
+    const source = nodes.find((node) => node.id === link.sourceId);
+    const target = nodes.find((node) => node.id === link.cardId);
+    const fromSynthesis = cards.find((card) => card.id === link.sourceId)?.kind === "synthesis";
     return {
-        id: card.id,
-        type: "card",
-        position: card.position ?? getGridPosition(index),
-        data: { card, label: book?.author ?? card.typedSource ?? "" },
+        id: link.sourceId + "-" + link.cardId,
+        source: link.sourceId,
+        target: link.cardId,
+        ...(source && target ? connectionHandles(source, target) : { sourceHandle: "right", targetHandle: "left" }),
+        style: fromSynthesis
+            ? { stroke: "var(--accent)", strokeWidth: 1.5, strokeDasharray: "5 4" }
+            : { stroke: "var(--faint)", strokeWidth: 1.5 },
     };
 }
 
-export function CanvasBoard(props: { initialCards: CardView[]; books: Books }) {
+export function CanvasBoard(props: { initialCards: CardView[]; initialLinks: CardLink[]; books: Books }) {
     return (
         <ReactFlowProvider>
             <Board {...props} />
@@ -51,182 +58,243 @@ export function CanvasBoard(props: { initialCards: CardView[]; books: Books }) {
     );
 }
 
-function Board({ initialCards, books }: { initialCards: CardView[]; books: Books }) {
-    const { cards, save, update } = useCards(initialCards);
-    const [nodes, setNodes] = useState<CardNode[]>(() => initialCards.map((card, index) => toNode(card, index, books)));
+function Board({
+    initialCards,
+    initialLinks,
+    books,
+}: {
+    initialCards: CardView[];
+    initialLinks: CardLink[];
+    books: Books;
+}) {
+    const { cards, update, saveSynthesis, removeSyntheses, setChat } = useCards(initialCards);
+    const [links, setLinks] = useState(initialLinks);
+    const [nodes, setNodes] = useState<CardNode[]>(() =>
+        initialCards.map((card, index) => toNode(card, index, books, initialLinks)),
+    );
 
-    const [fromServer, setFromServer] = useState(initialCards);
-    if (initialCards !== fromServer) {
-        setFromServer(initialCards);
-        const selected = new Set(nodes.filter((node) => node.selected).map((node) => node.id));
-        setNodes(initialCards.map((card, index) => ({ ...toNode(card, index, books), selected: selected.has(card.id) })));
+    const [serverCards, setServerCards] = useState(initialCards);
+    if (initialCards !== serverCards) {
+        setServerCards(initialCards);
+        setLinks(initialLinks);
+        const current = new Map(nodes.map((node) => [node.id, node]));
+        setNodes(
+            initialCards.map((card, index) => ({
+                ...toNode(card, index, books, initialLinks),
+                position: current.get(card.id)?.position ?? toNode(card, index, books, initialLinks).position,
+                selected: current.get(card.id)?.selected,
+            })),
+        );
     }
     const [panel, setPanel] = useState<PanelMode>({ kind: "closed" });
-    const [detailLevel, setLevel] = useState<DetailLevel>("gists");
+    const [detailLevel, setDetailLevel] = useState<DetailLevel>("gists");
+    const dragStartRef = useRef(new Map<string, XYPosition>());
+    const [isMoving, setIsMoving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const { zoom } = useViewport();
-    const boardRef = useRef<HTMLDivElement>(null);
     const flow = useReactFlow();
 
-    async function addCard(input: SaveQuoteInput) {
+    async function handleDragStop(dragged: CardNode[]) {
+        if (dragged.every((card) => {
+            const start = dragStartRef.current.get(card.id);
+            return start?.x === card.position.x && start?.y === card.position.y;
+        })) {
+            return;
+        }
+        setError(null);
+        setIsMoving(true);
+        try {
+            const outcomes = await Promise.allSettled(dragged.map(async (card) => {
+                const result = await moveCard(card.id, card.position);
+                return { id: card.id, ok: result.ok };
+            }));
+            const failed = dragged.filter((_, index) => {
+                const outcome = outcomes[index];
+                return outcome.status === "rejected" || !outcome.value.ok;
+            });
+            if (failed.length > 0) {
+                setNodes((previous) => previous.map((card) => failed.some((failedCard) => failedCard.id === card.id)
+                    ? { ...card, position: dragStartRef.current.get(card.id) ?? card.position } : card));
+                setError("Couldn't save the move. The cards are back where they were; try again.");
+            }
+        } finally {
+            setIsMoving(false);
+        }
+    }
 
-        const rect = boardRef.current?.getBoundingClientRect();
-        const center = rect
-            ? flow.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
-            : { x: 0, y: 0 };
-        const result = await save({ ...input, position: { x: center.x - 110, y: center.y - 36 } });
+    function connectCards(sourceId: string, targetId: string) {
+        if (sourceId === targetId || isMoving) {
+            return;
+        }
+        setError(null);
+        selectCards([sourceId, targetId]);
+    }
+
+    async function deleteSelected(removed: CardNode[]) {
+        if (isMoving || removed.length === 0) {
+            return false;
+        }
+        const ids = removed.map((node) => node.id);
+        setIsMoving(true);
+        setError(null);
+        try {
+            const result = await removeSyntheses(ids);
+            if (!result.ok) {
+                setError(result.error);
+                return false;
+            }
+            setLinks((previous) => previous.filter((link) => !ids.includes(link.cardId) && !ids.includes(link.sourceId)));
+            selectCards([]);
+            return true;
+        } finally {
+            setIsMoving(false);
+        }
+    }
+
+    function selectCards(ids: string[]) {
+        setNodes((previous) => previous.map((node) => ({ ...node, selected: ids.includes(node.id) })));
+        if (ids.length === 2) {
+            setPanel({ kind: "link", ids: ids.sort() });
+        } else if (ids.length === 1) {
+            setPanel({ kind: "card", id: ids[0] });
+        } else {
+            setPanel({ kind: "closed" });
+        }
+    }
+
+    async function addSynthesis(sourceIds: string[], input: { gist: string; title?: string; chat?: UIMessage[] }) {
+        const ids = [...new Set(sourceIds)];
+        const sources = nodes.filter((node) => ids.includes(node.id));
+        if (sources.length !== 2) {
+            return { ok: false as const, error: "Choose two different cards." };
+        }
+        const position = synthesisPosition(sources);
+        const result = await saveSynthesis({ ...input, sourceIds: ids, position });
         if (!result.ok) {
             return result;
         }
-        setNodes((previous) => (previous.some((node) => node.id === result.card.id) ? previous : [...previous, toNode(result.card, previous.length, books)]));
-        setPanel({ kind: "card", id: result.card.id });
+        const newLinks = ids.map((sourceId) => ({ cardId: result.card.id, sourceId }));
+        setLinks((previous) => [...previous.filter((link) => link.cardId !== result.card.id), ...newLinks]);
+        setNodes((previous) =>
+            previous.some((node) => node.id === result.card.id)
+                ? previous
+                : [...previous, toNode(result.card, previous.length, books, newLinks)],
+        );
+        selectCards([result.card.id]);
+        requestAnimationFrame(() => void flow.setCenter(
+            position.x + 110, position.y + 40, { zoom: Math.min(zoom, 1), duration: 250 },
+        ));
         return result;
     }
 
-    async function editCard(id: string, input: { gist: string; title?: string }) {
-        const result = await update(id, input);
-        if (result.ok) {
-            setNodes((previous) => previous.map((node) => {
-                if (node.id !== id) {
-                    return node;
-                }
-                return {
-                    ...node,
-                    data: {
-                        ...node.data,
-                        card: result.card,
-                    },
-                };
-            }));
-        }
-        return result;
-    }
+    const cardsById = new Map(cards.map((card) => [card.id, card]));
+    const openCard = panel.kind === "card" ? cardsById.get(panel.id) : undefined;
+    const linkCards = panel.kind === "link" ? panel.ids.flatMap((id) => cards.filter((card) => card.id === id)) : [];
+    const sourcesOf = (id: string) =>
+        links.flatMap((link) => (link.cardId === id ? cards.filter((card) => card.id === link.sourceId) : []));
+    const edges = links.map((link) => toEdge(link, cards, nodes));
+    const visibleNodes = nodes.flatMap((node) => {
+        const card = cardsById.get(node.id);
+        return card ? [{ ...node, data: toNode(card, 0, books, links).data }] : [];
+    });
 
-    const openCard = panel.kind === "card" ? cards.find((card) => card.id === panel.id) : undefined;
+    let panelMode: PanelMode = { kind: "closed" };
+    if (
+        (panel.kind === "card" && openCard) ||
+        (panel.kind === "link" && linkCards.length === 2)
+    ) {
+        panelMode = panel;
+    }
 
     return (
         <div className="flex flex-1 flex-col lg:flex-row">
             <section aria-label="Card canvas" className="flex min-h-[calc(100dvh-73px)] min-w-0 flex-1 flex-col">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rule px-6 py-3.5">
-
-                    <span className="font-serif text-xl">
-                        Your cards <span className="text-muted">· {cards.length}</span>
-                    </span>
-                    <button
-                        type="button"
-                        onClick={() => setPanel({ kind: "add" })}
-                        className="min-h-10 rounded-lg border border-field bg-surface px-3.5 font-medium hover:border-foreground"
-                    >
-                        Add a quote
-                    </button>
+                    <div className="flex flex-col">
+                        <span className="font-serif text-xl">
+                            Your cards <span className="text-muted">· {cards.length}</span>
+                        </span>
+                        <span className="text-xs text-muted">Drag between the blue dots to connect two cards.</span>
+                    </div>
                 </div>
 
-                <div ref={boardRef} className="relative flex-1 bg-board">
-                    <DetailContext.Provider value={detailLevel}>
-                        <ReactFlow
-                            nodes={nodes}
-                            nodeTypes={nodeTypes}
-                            onNodesChange={(changes: NodeChange<CardNode>[]) => setNodes((previous) => applyNodeChanges(changes, previous))}
-                            onNodeDragStop={(_, node) => void moveCard(node.id, node.position)}
-                            onNodeClick={(_, node) => setPanel({ kind: "card", id: node.id })}
-                            onPaneClick={() => setPanel({ kind: "closed" })}
-                            fitView
-                            fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-                            minZoom={0.4}
-                            maxZoom={2}
-                            nodesConnectable={false}
-                        >
-                            <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--board-dot)" />
-                        </ReactFlow>
-                    </DetailContext.Provider>
+                {error && <p role="alert" className="border-b border-rule px-6 py-3 text-warn">{error}</p>}
+                {isMoving && <p role="status" className="sr-only">Saving canvas…</p>}
+                <div className="relative flex-1 bg-board">
+                    <CanvasDisplayContext.Provider value={detailLevel}>
+                            <ReactFlow
+                                nodes={visibleNodes}
+                                edges={edges}
+                                nodeTypes={nodeTypes}
+                                onNodesChange={(changes) =>
+                                    setNodes((previous) => applyNodeChanges(changes, previous))
+                                }
+                                onNodeDragStart={(_, _node, dragged) => {
+                                    dragStartRef.current = new Map(dragged.map((card) => [card.id, { ...card.position }]));
+                                    setError(null);
+                                }}
+                                onNodeDragStop={(_, _node, dragged) => void handleDragStop(dragged)}
+                                onNodeClick={(event, node) => {
+                                    if ((event.target as Element).closest(".react-flow__handle")) {
+                                        return;
+                                    }
+                                    selectCards([node.id]);
+                                }}
+                                onPaneClick={() => selectCards([])}
+                                selectionKeyCode={null}
+                                multiSelectionKeyCode={null}
+                                selectNodesOnDrag={false}
+                                nodeDragThreshold={0}
+                                nodesDraggable={!isMoving}
+                                deleteKeyCode={["Backspace", "Delete"]}
+                                onBeforeDelete={({ nodes: removed }) => deleteSelected(removed)}
+                                fitView
+                                fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+                                minZoom={0.4}
+                                maxZoom={2}
+                                connectionMode={ConnectionMode.Loose}
+                                nodesConnectable={!isMoving}
+                                onConnect={({ source, target }) => connectCards(source, target)}
+                                isValidConnection={({ source, target }) => source !== target}
+                                connectionLineStyle={{ stroke: "var(--accent)", strokeWidth: 2 }}
+                                edgesFocusable={false}
+                            >
+                                <Background
+                                    variant={BackgroundVariant.Dots}
+                                    gap={20}
+                                    size={1.5}
+                                    color="var(--board-dot)"
+                                />
+                            </ReactFlow>
+                    </CanvasDisplayContext.Provider>
 
                     <Toolbar
                         zoom={zoom}
                         detailLevel={detailLevel}
-                        onLevel={setLevel}
+                        onDetailLevel={setDetailLevel}
                         onZoomIn={() => flow.zoomIn()}
                         onZoomOut={() => flow.zoomOut()}
                     />
 
                     {cards.length === 0 && (
                         <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center leading-normal text-muted">
-                            No cards yet. Open a book from the Library and select a passage, or add a quote.
+                            No cards yet. Open a book from the Library and select a passage.
                         </p>
                     )}
                 </div>
             </section>
 
             <CanvasPanel
-                mode={openCard || panel.kind === "add" ? panel : { kind: "closed" }}
+                mode={panelMode}
                 card={openCard}
+                linkCards={linkCards}
+                sources={openCard ? sourcesOf(openCard.id) : []}
                 books={books}
-                onAdd={addCard}
-                onEdit={editCard}
-                onClose={() => setPanel({ kind: "closed" })}
+                onEdit={update}
+                onSaveLink={addSynthesis}
+                onChatMessages={setChat}
+                onClose={() => selectCards([])}
             />
         </div>
     );
 }
-
-function Toolbar({ zoom, detailLevel, onLevel, onZoomIn, onZoomOut }: {
-    zoom: number;
-    detailLevel: DetailLevel;
-    onLevel: (l: DetailLevel) => void;
-    onZoomIn: () => void;
-    onZoomOut: () => void;
-}) {
-    return (
-        <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-2 rounded-[10px] border border-rule bg-surface p-1.5 shadow-[0_2px_8px_rgba(23,23,28,0.08)]">
-            <div className="flex items-center gap-0.5">
-                <button
-                    type="button"
-                    aria-label="Zoom out"
-                    onClick={onZoomOut}
-                    className="h-10 w-10 rounded-md text-xl hover:bg-rule-soft"
-                >
-                    −
-                </button>
-                <span className="min-w-12 text-center text-[13px] tabular-nums">{Math.round(zoom * 100)}%</span>
-                <button
-                    type="button"
-                    aria-label="Zoom in"
-                    onClick={onZoomIn}
-                    className="h-10 w-10 rounded-md text-xl hover:bg-rule-soft"
-                >
-                    +
-                </button>
-            </div>
-            <div role="group" aria-label="Detail" className="flex overflow-hidden rounded-lg border border-field">
-                {LEVELS.map(([id, label], index) => (
-                    <button
-                        key={id}
-                        type="button"
-                        aria-pressed={detailLevel === id}
-                        onClick={() => onLevel(id)}
-                        className={`min-h-10 px-3 text-[13px] ${index > 0 ? "border-l border-field" : ""} ${detailLevel === id ? "bg-foreground text-white" : "bg-surface hover:bg-rule-soft"
-                            }`}
-                    >
-                        {label}
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-function CardNodeView({ data, selected }: NodeProps<CardNode>) {
-    const detailLevel = useContext(DetailContext);
-    const { card, label } = data;
-    return (
-        <div
-            className={`flex min-h-[72px] w-[220px] flex-col gap-1.5 rounded-[10px] bg-surface px-3.5 py-3 ${selected ? "border-2 border-accent" : "border border-field"
-                }`}
-        >
-            <span className="truncate text-[11px] text-muted">{label}</span>
-            {detailLevel === "titles" && <span className="font-serif text-lg leading-tight">{card.title}</span>}
-            {detailLevel === "gists" && <span className="text-sm leading-snug">{card.gist}</span>}
-            {detailLevel === "quotes" && <span className="font-serif text-sm leading-snug italic">“{card.quote}”</span>}
-        </div>
-    );
-}
-
-const nodeTypes = { card: CardNodeView };

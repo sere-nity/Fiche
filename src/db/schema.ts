@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { UIMessage } from "ai";
 import { pgTable, pgEnum, uuid, text, timestamp, jsonb, index, primaryKey, check } from "drizzle-orm/pg-core";
 
 export const cardKindEnum = pgEnum("card_kind", ["quote", "synthesis"]);
@@ -47,6 +48,8 @@ export const cards = pgTable(
         title: text("title").notNull(),
         move: moveEnum("move"),
         position: jsonb("position").$type<Position>(),
+        // The riff (Reader) or linking chat (canvas) that belongs to this card.
+        chat: jsonb("chat").$type<UIMessage[]>(),
         createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     },
     (table) => [

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
+import type { UIMessage } from "ai";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createAnchor, findAnchor } from "@/lib/anchor";
 import { useCards } from "@/lib/cards/use-cards";
 import type { CardView } from "@/lib/cards/card-view";
-import { cardAt, selectionOffsets, rangeAt, paint, type LocatedCard } from "./reader-dom";
+import { cardAt, selectionOffsets, rangeAt, paint } from "./reader-dom";
 
 import { ReaderDrawer, type ReaderMode } from "./reader-drawer";
 // The server-rendered book does not change after loading.
@@ -20,22 +20,20 @@ export function ReaderPanel({
     signedIn: boolean;
     initialCards: CardView[];
 }) {
-    const { cards, save, update } = useCards(initialCards);
+    const { cards, save, update, setChat } = useCards(initialCards);
+    const chatRef = useRef<UIMessage[]>([]);
     const [mode, setMode] = useState<ReaderMode>({ kind: "closed" });
     const [gist, setGist] = useState("");
     const [title, setTitle] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [isChatting, setIsChatting] = useState(false);
+    const [isChatBusy, setIsChatBusy] = useState(false);
 
-    // The book and margin are rendered outside this component.
+    // The book is rendered outside this component.
     const book = useSyncExternalStore(
         noSubscribe,
         () => document.getElementById("book"),
-        () => null,
-    );
-    const margin = useSyncExternalStore(
-        noSubscribe,
-        () => document.getElementById("book-margin"),
         () => null,
     );
     const bookText = book?.textContent ?? "";
@@ -47,11 +45,15 @@ export function ReaderPanel({
     } else if (openCard) {
         hasChanges = gist.trim() !== openCard.gist || title.trim() !== openCard.title;
     }
+    // A started chat is work too: clicking the book shouldn't close the panel on it.
+    const keepOpen = hasChanges || isChatting;
 
     function showPanel(next: ReaderMode) {
         setMode(next);
         setError(null);
+        setIsChatting(false);
         const card = next.kind === "card" ? cards.find((card) => card.id === next.id) : undefined;
+        chatRef.current = card?.chat ?? [];
         setGist(card?.gist ?? "");
         setTitle(card?.title ?? "");
     }
@@ -83,12 +85,12 @@ export function ReaderPanel({
         return starts;
     }, [book]);
 
-    const hasChangesRef = useRef(hasChanges);
+    const keepOpenRef = useRef(keepOpen);
     const locatedRef = useRef(located);
     const openCardRef = useRef((id: string) => showPanel({ kind: "card", id }));
     const panelRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
-        hasChangesRef.current = hasChanges;
+        keepOpenRef.current = keepOpen;
         locatedRef.current = located;
         openCardRef.current = (id: string) => showPanel({ kind: "card", id });
     });
@@ -96,28 +98,23 @@ export function ReaderPanel({
         if (!book) {
             return;
         }
-        const fromSelection = () => {
-            const offsets = selectionOffsets(book);
-            if (!offsets) {
-                return false;
-            }
-            setMode({ kind: "draft", anchor: createAnchor(bookText, offsets.start, offsets.end) });
-            setGist("");
-            setTitle("");
-            setError(null);
-            return true;
-        };
         const onPointerUp = (event: PointerEvent) => {
             const target = event.target as Node;
-            if (panelRef.current?.contains(target) || margin?.contains(target)) {
+            if (panelRef.current?.contains(target)) {
                 return;
             }
-            if (fromSelection()) {
-
+            const offsets = selectionOffsets(book);
+            if (offsets) {
+                setMode({ kind: "draft", anchor: createAnchor(bookText, offsets.start, offsets.end) });
+                setGist("");
+                setTitle("");
+                setError(null);
+                setIsChatting(false);
+                chatRef.current = [];
                 window.getSelection()?.removeAllRanges();
                 return;
             }
-            if (hasChangesRef.current) {
+            if (keepOpenRef.current) {
                 return;
             }
             const hit = cardAt(book, blockStarts, locatedRef.current, event.clientX, event.clientY);
@@ -128,21 +125,11 @@ export function ReaderPanel({
                 setMode({ kind: "closed" });
             }
         };
-        const onKeyUp = (event: KeyboardEvent) => {
-            if (event.key === "Escape") {
-                setMode({ kind: "closed" });
-            }
-            else {
-                fromSelection();
-            }
-        };
         document.addEventListener("pointerup", onPointerUp);
-        document.addEventListener("keyup", onKeyUp);
         return () => {
             document.removeEventListener("pointerup", onPointerUp);
-            document.removeEventListener("keyup", onKeyUp);
         };
-    }, [book, margin, bookText, blockStarts]);
+    }, [book, bookText, blockStarts]);
 
     const [hoverId, setHoverId] = useState<string | null>(null);
     useEffect(() => {
@@ -197,8 +184,6 @@ export function ReaderPanel({
         paint("fiche-draft", [active && rangeAt(book, active)]);
     }, [book, bookText, located, mode]);
 
-    const dots = useMarginDots(book, margin, located);
-
     const open = mode.kind !== "closed";
     useEffect(() => {
         document.documentElement.dataset.drawer = open ? "open" : "closed";
@@ -240,6 +225,9 @@ export function ReaderPanel({
 
     async function handleSubmit(event: React.FormEvent) {
         event.preventDefault();
+        if (isSaving || isChatBusy) {
+            return;
+        }
         setIsSaving(true);
         setError(null);
         if (mode.kind === "draft") {
@@ -251,6 +239,7 @@ export function ReaderPanel({
                 quoteSuffix: anchor.suffix,
                 gist,
                 title,
+                chat: chatRef.current,
             });
             setIsSaving(false);
             if (!result.ok) {
@@ -259,7 +248,11 @@ export function ReaderPanel({
             }
 
             window.getSelection()?.removeAllRanges();
-            setMode({ kind: "closed" });
+            if (isChatting) {
+                setMode({ kind: "card", id: result.card.id });
+            } else {
+                setMode({ kind: "closed" });
+            }
         } else if (openCard) {
             const result = await update(openCard.id, { gist, title });
             setIsSaving(false);
@@ -274,23 +267,6 @@ export function ReaderPanel({
 
     return (
         <div ref={panelRef}>
-            {margin &&
-                dots.map((dot) =>
-                    createPortal(
-                        <button
-                            key={dot.id}
-                            type="button"
-                            aria-label={`Open card: ${dot.title}`}
-                            onClick={() => showPanel({ kind: "card", id: dot.id })}
-                            style={{ top: dot.top }}
-                            className={`absolute left-0 h-2 w-2 rounded-full before:absolute before:-inset-3 before:content-[''] ${mode.kind === "card" && mode.id === dot.id ? "bg-foreground" : "bg-accent"
-                                }`}
-                        />,
-                        margin,
-                        dot.id,
-                    ),
-                )}
-
             {!open && (
                 <button
                     type="button"
@@ -312,6 +288,8 @@ export function ReaderPanel({
                     title={title}
                     error={error}
                     isSaving={isSaving}
+                    isChatBusy={isChatBusy}
+                    onChatBusyChange={setIsChatBusy}
                     hasChanges={hasChanges}
                     onGistChange={setGist}
                     onTitleChange={setTitle}
@@ -319,38 +297,15 @@ export function ReaderPanel({
                     onClose={() => setMode({ kind: "closed" })}
                     onShowList={() => showPanel({ kind: "list" })}
                     onOpenCard={scrollToCard}
+                    onChatSend={() => setIsChatting(true)}
+                    onChatMessages={(messages) => {
+                        chatRef.current = messages;
+                        if (mode.kind === "card") {
+                            setChat(mode.id, messages);
+                        }
+                    }}
                 />
             )}
         </div>
     );
-}
-
-type MarginDot = { id: string; title: string; top: number };
-
-function useMarginDots(
-    book: HTMLElement | null,
-    margin: HTMLElement | null,
-    located: LocatedCard[],
-): MarginDot[] {
-    const [dots, setDots] = useState<MarginDot[]>([]);
-    useLayoutEffect(() => {
-        if (!book || !margin) {
-            return;
-        }
-        const measure = () => {
-            const origin = margin.getBoundingClientRect().top;
-            setDots(
-                located.flatMap(({ card, pos }) => {
-                    const rect = pos && rangeAt(book, pos)?.getClientRects()[0];
-                    return rect ? [{ id: card.id, title: card.title, top: rect.top - origin + rect.height / 2 - 4 }] : [];
-                }),
-            );
-        };
-
-        const observer = new ResizeObserver(measure);
-        observer.observe(book);
-        document.fonts?.ready.then(measure);
-        return () => observer.disconnect();
-    }, [book, margin, located]);
-    return dots;
 }

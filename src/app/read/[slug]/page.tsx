@@ -1,4 +1,4 @@
-import { Fragment, Suspense } from "react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
@@ -51,10 +51,7 @@ async function Book({ params }: { params: Params }) {
             </span>
             <h1 className="mb-6 font-serif text-[32px] leading-[1.15]">{meta.title}</h1>
 
-            <div className="relative">
-                <div id="book-margin" className="absolute inset-y-0 -left-5 w-2 sm:-left-7" />
-                <BookText blocks={blocks} />
-            </div>
+            <BookText blocks={blocks} />
         </>
     );
 }
@@ -80,7 +77,7 @@ function BookText({ blocks }: { blocks: Block[] }) {
         <article id="book" className="font-serif text-xl leading-[1.65]">
             {blocks.map((b) => {
                 const inline = segments(b.text).map((s, i) =>
-                    s.em ? <em key={i}>{s.text}</em> : <Fragment key={i}>{s.text}</Fragment>,
+                    s.em ? <em key={i}>{s.text}</em> : s.text,
                 );
                 switch (b.kind) {
                     case "heading":

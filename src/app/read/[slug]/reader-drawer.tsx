@@ -1,13 +1,17 @@
 "use client";
 
 import type { FormEvent } from "react";
+import type { UIMessage } from "ai";
 import Link from "next/link";
 import { CloseButton } from "@/app/close-button";
+import { ChatThread } from "@/app/chat-thread";
+import { openingLine, type ChatContext } from "@/lib/chat/context";
 import type { Anchor } from "@/lib/anchor";
 import type { CardView } from "@/lib/cards/card-view";
 import type { LocatedCard } from "./reader-dom";
 
-export type ReaderMode = { kind: "closed" } | { kind: "list" } | { kind: "draft"; anchor: Anchor } | { kind: "card"; id: string };
+export type ReaderMode =
+    { kind: "closed" } | { kind: "list" } | { kind: "draft"; anchor: Anchor } | { kind: "card"; id: string };
 
 const MAX_WORDS = 60;
 
@@ -21,6 +25,8 @@ type ReaderDrawerProps = {
     title: string;
     error: string | null;
     isSaving: boolean;
+    isChatBusy: boolean;
+    onChatBusyChange: (busy: boolean) => void;
     hasChanges: boolean;
     onGistChange: (gist: string) => void;
     onTitleChange: (title: string) => void;
@@ -28,6 +34,8 @@ type ReaderDrawerProps = {
     onClose: () => void;
     onShowList: () => void;
     onOpenCard: (id: string) => void;
+    onChatSend: () => void;
+    onChatMessages: (messages: UIMessage[]) => void;
 };
 
 export function ReaderDrawer({
@@ -40,6 +48,8 @@ export function ReaderDrawer({
     title,
     error,
     isSaving,
+    isChatBusy,
+    onChatBusyChange,
     hasChanges,
     onGistChange,
     onTitleChange,
@@ -47,112 +57,121 @@ export function ReaderDrawer({
     onClose,
     onShowList,
     onOpenCard,
+    onChatSend,
+    onChatMessages,
 }: ReaderDrawerProps) {
     const quote = mode.kind === "draft" ? mode.anchor.quote : (openCard?.quote ?? "");
     const words = quote.trim().split(/\s+/).filter(Boolean).length;
     const tooLong = mode.kind === "draft" && words > MAX_WORDS;
+    const chatContext: ChatContext = { kind: "passage", textSlug: slug, quote, cardId: openCard?.id };
 
     return (
-
-        <div className="fixed inset-x-0 bottom-0 z-30 max-h-[75vh] overflow-y-auto border-t border-rule bg-surface shadow-2xl lg:inset-y-0 lg:left-auto lg:max-h-none lg:w-[380px] lg:border-t-0 lg:border-l lg:shadow-[-8px_0_24px_rgba(23,23,28,0.06)]">
+        <div className="fixed inset-x-0 bottom-0 z-30 max-h-[75vh] overflow-y-auto border-t border-rule bg-surface shadow-2xl lg:top-[73px] lg:left-auto lg:max-h-none lg:w-[380px] lg:border-t-0 lg:border-l lg:shadow-[-8px_0_24px_rgba(23,23,28,0.06)]">
             {mode.kind === "list" || (mode.kind === "card" && !openCard) ? (
-                <CardList
-                    signedIn={signedIn}
-                    slug={slug}
-                    located={located}
-                    onOpen={onOpenCard}
-                    onClose={onClose}
-                />
+                <CardList signedIn={signedIn} slug={slug} located={located} onOpen={onOpenCard} onClose={onClose} />
             ) : (
-                <form onSubmit={onSubmit} className="flex flex-col gap-5 px-6 py-7">
-                    <div className="flex items-center justify-between gap-3">
-                        <h2 className="text-[15px] font-semibold">{mode.kind === "draft" ? "New card" : "Card"}</h2>
-                        <div className="flex items-center gap-1">
-                            {mode.kind === "card" && (
-                                <button
-                                    type="button"
-                                    onClick={onShowList}
-                                    className="px-2 text-[13px] text-accent"
-                                >
-                                    All cards
-                                </button>
-                            )}
-                            <CloseButton onClick={onClose} />
+                <div className="flex min-h-full flex-col">
+                    <form onSubmit={onSubmit} className="flex flex-col gap-5 px-6 py-7">
+                        <div className="flex items-center justify-between gap-3">
+                            <h2 className="text-[15px] font-semibold">{mode.kind === "draft" ? "New card" : "Card"}</h2>
+                            <div className="flex items-center gap-1">
+                                {mode.kind === "card" && (
+                                    <button type="button" onClick={onShowList} className="px-2 text-[13px] text-accent">
+                                        All cards
+                                    </button>
+                                )}
+                                <CloseButton onClick={onClose} />
+                            </div>
                         </div>
-                    </div>
 
-                    <div className="flex flex-col gap-1.5">
-                        <span className="text-xs text-muted">Quote</span>
-                        <blockquote className="rounded-lg bg-quote px-3.5 py-3 font-serif text-base leading-normal">
-                            “{quote}”
-                        </blockquote>
-                        {tooLong && (
-                            <span className="text-xs text-warn">
-                                {words} words. Keep it under {MAX_WORDS}: select the line that carries the idea.
-                            </span>
-                        )}
-                    </div>
-
-                    {!signedIn ? (
-                        <p className="leading-normal text-secondary">
-                            <Link href={`/sign-in?next=/read/${slug}`} className="font-medium text-accent underline">
-                                Sign in
-                            </Link>{" "}
-                            to save this as a card.
-                        </p>
-                    ) : (
-                        <>
-                            <div className="flex flex-col gap-1.5">
-                                <label htmlFor="gist" className="text-xs text-muted">
-                                    Gist <span className="text-faint">· one sentence, your words</span>
-                                </label>
-                                <textarea
-                                    id="gist"
-                                    rows={3}
-                                    value={gist}
-                                    onChange={(event) => onGistChange(event.target.value)}
-                                    required
-                                    className="field-sizing-content min-h-24 w-full resize-none rounded-lg border border-field p-3 text-[15px] leading-snug outline-none focus:border-accent"
-                                />
-                            </div>
-
-                            <div className="flex flex-col gap-1.5">
-                                <label htmlFor="title" className="text-xs text-muted">
-                                    Title (optional)
-                                </label>
-                                <input
-                                    id="title"
-                                    value={title}
-                                    onChange={(event) => onTitleChange(event.target.value)}
-                                    maxLength={80}
-                                    className="min-h-11 w-full rounded-lg border border-field px-3 text-[15px] outline-none focus:border-accent"
-                                />
-                            </div>
-
-                            {error && (
-                                <p role="alert" className="text-warn">
-                                    {error}
-                                </p>
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-xs text-muted">Quote</span>
+                            <blockquote className="rounded-lg bg-quote px-3.5 py-3 font-serif text-base leading-normal">
+                                “{quote}”
+                            </blockquote>
+                            {tooLong && (
+                                <span className="text-xs text-warn">
+                                    {words} words. Keep it under {MAX_WORDS}: select the line that carries the idea.
+                                </span>
                             )}
+                        </div>
 
-                            <div className="flex gap-2">
-                                <button
-                                    type="button"
-                                    onClick={onClose}
-                                    className="min-h-11 flex-1 rounded-lg border border-field bg-surface font-medium hover:border-foreground"
+                        {!signedIn ? (
+                            <p className="leading-normal text-secondary">
+                                <Link
+                                    href={`/sign-in?next=/read/${slug}`}
+                                    className="font-medium text-accent underline"
                                 >
-                                    {mode.kind === "draft" ? "Discard" : "Done"}
-                                </button>
-                                <button
-                                    disabled={isSaving || tooLong || (mode.kind === "card" && !hasChanges)}
-                                    className="min-h-11 flex-[2] rounded-lg bg-accent font-medium text-white hover:bg-accent-hover disabled:opacity-40"
-                                >
-                                    {isSaving ? "Saving…" : mode.kind === "draft" ? "Save card" : "Save changes"}
-                                </button>
-                            </div>
-                        </>
+                                    Sign in
+                                </Link>{" "}
+                                to save this as a card.
+                            </p>
+                        ) : (
+                            <>
+                                <div className="flex flex-col gap-1.5">
+                                    <label htmlFor="gist" className="text-xs text-muted">
+                                        Gist <span className="text-faint">· one sentence, your words</span>
+                                    </label>
+                                    <textarea
+                                        id="gist"
+                                        rows={3}
+                                        value={gist}
+                                        onChange={(event) => onGistChange(event.target.value)}
+                                        required
+                                        className="field-sizing-content min-h-24 w-full resize-none rounded-lg border border-field p-3 text-[15px] leading-snug outline-none focus:border-accent"
+                                    />
+                                </div>
+
+                                <div className="flex flex-col gap-1.5">
+                                    <label htmlFor="title" className="text-xs text-muted">
+                                        Title (optional)
+                                    </label>
+                                    <input
+                                        id="title"
+                                        value={title}
+                                        onChange={(event) => onTitleChange(event.target.value)}
+                                        maxLength={80}
+                                        className="min-h-11 w-full rounded-lg border border-field px-3 text-[15px] outline-none focus:border-accent"
+                                    />
+                                </div>
+
+                                {error && (
+                                    <p role="alert" className="text-warn">
+                                        {error}
+                                    </p>
+                                )}
+
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={onClose}
+                                        className="min-h-11 flex-1 rounded-lg border border-field bg-surface font-medium hover:border-foreground"
+                                    >
+                                        {mode.kind === "draft" ? "Discard" : "Done"}
+                                    </button>
+                                    <button
+                                        disabled={isSaving || isChatBusy || tooLong || (mode.kind === "card" && !hasChanges)}
+                                        className="min-h-11 flex-[2] rounded-lg bg-accent font-medium text-white hover:bg-accent-hover disabled:opacity-40"
+                                    >
+                                        {isSaving ? "Saving…" : isChatBusy ? "Waiting for reply…" : mode.kind === "draft" ? "Save card" : "Save changes"}
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </form>
+                    {signedIn && (
+                        <ChatThread
+                            key={quote}
+                            context={chatContext}
+                            opening={openingLine(chatContext, [])}
+                            placeholder="Riff on this passage…"
+                            initialMessages={openCard?.chat}
+                            onSend={onChatSend}
+                            onBusyChange={onChatBusyChange}
+                            onMessagesChange={onChatMessages}
+                        />
                     )}
-                </form>
+                </div>
             )}
         </div>
     );
@@ -201,7 +220,9 @@ function CardList({
                                     className="flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-background"
                                 >
                                     <span className="font-serif text-base leading-snug">{card.title}</span>
-                                    <span className="line-clamp-2 text-[13px] leading-snug text-secondary">{card.gist}</span>
+                                    <span className="line-clamp-2 text-[13px] leading-snug text-secondary">
+                                        {card.gist}
+                                    </span>
                                 </button>
                             </li>
                         ))}

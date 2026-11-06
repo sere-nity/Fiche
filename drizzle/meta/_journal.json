@@ -36,6 +36,13 @@
       "when": 1793901710651,
       "tag": "0004_drop_gist_check",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793910909802,
+      "tag": "0005_card_chat",
+      "breakpoints": true
     }
   ]
 }

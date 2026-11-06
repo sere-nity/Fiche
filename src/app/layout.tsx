@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Inter, Newsreader } from "next/font/google";
 import { getLearner } from "@/lib/session";
 import { signOut } from "./sign-in/actions";
-import { NavLinks, NavLinksFallback } from "./nav-links";
+import { NavLinks } from "./nav-links";
 import "./globals.css";
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
@@ -24,12 +24,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     return (
         <html lang="en" className={`${inter.variable} ${newsreader.variable} h-full antialiased`}>
             <body className="min-h-full flex flex-col font-sans text-sm">
-                <header className="flex flex-wrap items-center justify-between gap-4 border-b border-rule px-4 py-3.5 sm:px-8">
+                <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-4 border-b border-rule bg-background px-4 py-3.5 sm:px-8 lg:h-[73px] lg:shrink-0">
                     <Link href="/" className="font-serif text-2xl font-semibold">
                         Fiche
                     </Link>
                     <div className="flex flex-wrap items-center gap-4">
-                        <Suspense fallback={<NavLinksFallback />}>
+                        <Suspense>
                             <NavLinks />
                         </Suspense>
 
